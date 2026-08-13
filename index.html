@@ -610,6 +610,25 @@
     .page-footer .line1{color:#000;}
     thead th{background:#eee !important; color:#000 !important;}
   }
+
+    .inline-status, .inline-date{
+      width:100%;
+      min-width:92px;
+      box-sizing:border-box;
+      border:1px solid var(--line-soft);
+      border-radius:6px;
+      background:#fff;
+      padding:5px 6px;
+      font:inherit;
+      font-size:11px;
+      color:var(--ink);
+    }
+    .inline-status:focus, .inline-date:focus{
+      outline:2px solid rgba(17,116,154,.18);
+      border-color:#11749a;
+    }
+    .inline-date{min-width:118px;}
+
 </style>
 </head>
 <body>
@@ -693,6 +712,12 @@
         <tbody id="tbody"></tbody>
       </table>
     </div>
+
+    <div style="margin-top:8px;font-size:11px;color:var(--ink-faint);">
+      Status Scan dan Entry BOS dapat dipilih langsung pada tabel (Sudah/Belum).
+      Tanggal dapat dipilih melalui kalender pada kolom tanggal. Jika status diubah menjadi
+      <strong>Sudah</strong> tanpa tanggal, tanggal hari ini akan diisi otomatis.
+    </div>
     <div class="empty-state" id="emptyState" style="display:none;">
       <div class="big">Belum ada data SPM pada periode ini</div>
       <div>Klik “+ Tambah SPM” untuk mulai mencatat, atau ubah filter bulan/tahun di atas.</div>
@@ -734,20 +759,26 @@
           <input type="number" id="f_nilai" placeholder="0" min="0">
         </div>
         <div class="form-field">
+          <label>Status Scan</label>
+          <select id="f_sudahDipindai">
+            <option value="false">Belum</option>
+            <option value="true">Sudah</option>
+          </select>
+        </div>
+        <div class="form-field">
           <label>Tanggal Dipindai</label>
           <input type="date" id="f_tanggalPindai">
         </div>
-        <div class="toggle-row">
-          <input type="checkbox" id="f_sudahDipindai">
-          <label for="f_sudahDipindai">Tandai sebagai sudah dipindai</label>
+        <div class="form-field">
+          <label>Status Entry BOS</label>
+          <select id="f_entryBos">
+            <option value="false">Belum</option>
+            <option value="true">Sudah</option>
+          </select>
         </div>
         <div class="form-field">
           <label>Tanggal Entry BOS</label>
           <input type="date" id="f_tanggalEntryBos">
-        </div>
-        <div class="toggle-row">
-          <input type="checkbox" id="f_entryBos">
-          <label for="f_entryBos">Tandai sebagai sudah entry BOS</label>
         </div>
         <div class="form-field full">
           <label>Keterangan (opsional)</label>
@@ -768,7 +799,7 @@
     <p class="sub">Gunakan Google Sheets sebagai database bersama Tim Kerja Keuangan. Tempel URL Web App Apps Script Anda di bawah ini — cara membuatnya ada di README (berkas <code>Code.gs</code> terlampir).</p>
     <div class="form-field full" style="margin-bottom:12px;">
       <label>URL Web App Google Apps Script</label>
-      <input type="url" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/AKfycbwIQz8HMI9xUU37_9q4bCLVZ3gX8WCm8DTtivYSMJWH4Enb9uabmlmm_8ZAb2kKG2CC8g/exec">
+      <input type="url" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/AKfycbx.../exec">
     </div>
     <p id="sheetStatus" style="font-size:11.5px; color:var(--ink-faint); margin:0 0 4px;">Belum diatur.</p>
     <div class="form-actions" style="justify-content:flex-start;">
@@ -990,10 +1021,16 @@
         '<td class="mono">'+fmtDate(r.tanggalSpm)+'</td>' +
         '<td class="uraian">'+escapeHtml(r.uraian)+'</td>' +
         '<td class="num">'+fmtRp(r.nilai)+'</td>' +
-        '<td class="mono">'+fmtDate(r.tanggalPindai)+'</td>' +
-        '<td>'+ (r.sudah ? '<span class="stamp sudah"><span class="dot"></span>Sudah</span>' : '<span class="stamp belum"><span class="dot"></span>Belum</span>') +'</td>' +
-        '<td class="mono">'+fmtDate(r.tanggalEntryBos)+'</td>' +
-        '<td>'+ (r.entryBos ? '<span class="stamp sudah"><span class="dot"></span>Sudah</span>' : '<span class="stamp belum"><span class="dot"></span>Belum</span>') +'</td>' +
+        '<td><input class="inline-date" type="date" data-field="tanggalPindai" data-id="'+r.id+'" value="'+escapeHtml(r.tanggalPindai||"")+'"></td>' +
+        '<td><select class="inline-status" data-field="sudah" data-id="'+r.id+'">' +
+          '<option value="false" '+(!r.sudah?'selected':'')+'>Belum</option>' +
+          '<option value="true" '+(r.sudah?'selected':'')+'>Sudah</option>' +
+        '</select></td>' +
+        '<td><input class="inline-date" type="date" data-field="tanggalEntryBos" data-id="'+r.id+'" value="'+escapeHtml(r.tanggalEntryBos||"")+'"></td>' +
+        '<td><select class="inline-status" data-field="entryBos" data-id="'+r.id+'">' +
+          '<option value="false" '+(!r.entryBos?'selected':'')+'>Belum</option>' +
+          '<option value="true" '+(r.entryBos?'selected':'')+'>Sudah</option>' +
+        '</select></td>' +
         '<td class="keterangan">'+escapeHtml(r.keterangan||"")+'</td>' +
         '<td class="actions">' +
           '<button class="icon-btn" title="Ubah" data-act="edit" data-id="'+r.id+'">&#9998;</button>' +
@@ -1015,6 +1052,43 @@
     renderOverview();
     renderTable();
   }
+
+  // ---------- status & tanggal langsung di tabel ----------
+  document.getElementById("tbody").addEventListener("change", function(e){
+    var el = e.target;
+    var id = el.getAttribute("data-id");
+    var field = el.getAttribute("data-field");
+    if(!id || !field) return;
+
+    var rec = state.records.find(function(r){ return r.id === id; });
+    if(!rec) return;
+
+    if(field === "sudah" || field === "entryBos"){
+      rec[field] = el.value === "true";
+
+      // Jika status menjadi Sudah, otomatis isi tanggal hari ini bila kosong.
+      if(field === "sudah" && rec.sudah && !rec.tanggalPindai){
+        rec.tanggalPindai = new Date().toISOString().slice(0,10);
+      }
+      if(field === "entryBos" && rec.entryBos && !rec.tanggalEntryBos){
+        rec.tanggalEntryBos = new Date().toISOString().slice(0,10);
+      }
+
+      // Jika status menjadi Belum, kosongkan tanggal terkait.
+      if(field === "sudah" && !rec.sudah) rec.tanggalPindai = "";
+      if(field === "entryBos" && !rec.entryBos) rec.tanggalEntryBos = "";
+    } else if(field === "tanggalPindai" || field === "tanggalEntryBos"){
+      rec[field] = el.value || "";
+      // Bila tanggal diisi, otomatis status menjadi Sudah.
+      if(field === "tanggalPindai" && rec.tanggalPindai) rec.sudah = true;
+      if(field === "tanggalEntryBos" && rec.tanggalEntryBos) rec.entryBos = true;
+    }
+
+    renderSummary();
+    renderTable();
+    autoSheetSync();
+    showToast("Status/tanggal berhasil diperbarui.");
+  });
 
   // ---------- table row actions ----------
   document.getElementById("tbody").addEventListener("click", function(e){
@@ -1070,9 +1144,9 @@
     document.getElementById("f_uraian").value = record ? record.uraian : "";
     document.getElementById("f_nilai").value = record ? record.nilai : "";
     document.getElementById("f_tanggalPindai").value = record ? record.tanggalPindai : "";
-    document.getElementById("f_sudahDipindai").checked = record ? !!record.sudah : false;
+    document.getElementById("f_sudahDipindai").value = record && record.sudah ? "true" : "false";
     document.getElementById("f_tanggalEntryBos").value = record ? (record.tanggalEntryBos||"") : "";
-    document.getElementById("f_entryBos").checked = record ? !!record.entryBos : false;
+    document.getElementById("f_entryBos").value = record && record.entryBos ? "true" : "false";
     document.getElementById("f_keterangan").value = record ? (record.keterangan||"") : "";
     overlay.classList.add("open");
   }
@@ -1083,13 +1157,21 @@
   overlay.addEventListener("click", function(e){ if(e.target===overlay) closeModal(); });
 
   document.getElementById("f_sudahDipindai").addEventListener("change", function(e){
-    if(e.target.checked && !document.getElementById("f_tanggalPindai").value){
-      document.getElementById("f_tanggalPindai").value = new Date().toISOString().slice(0,10);
+    var dateEl = document.getElementById("f_tanggalPindai");
+    if(e.target.value === "true" && !dateEl.value){
+      dateEl.value = new Date().toISOString().slice(0,10);
+    }
+    if(e.target.value === "false"){
+      dateEl.value = "";
     }
   });
   document.getElementById("f_entryBos").addEventListener("change", function(e){
-    if(e.target.checked && !document.getElementById("f_tanggalEntryBos").value){
-      document.getElementById("f_tanggalEntryBos").value = new Date().toISOString().slice(0,10);
+    var dateEl = document.getElementById("f_tanggalEntryBos");
+    if(e.target.value === "true" && !dateEl.value){
+      dateEl.value = new Date().toISOString().slice(0,10);
+    }
+    if(e.target.value === "false"){
+      dateEl.value = "";
     }
   });
 
@@ -1101,9 +1183,9 @@
       uraian: document.getElementById("f_uraian").value.trim(),
       nilai: document.getElementById("f_nilai").value ? Number(document.getElementById("f_nilai").value) : "",
       tanggalPindai: document.getElementById("f_tanggalPindai").value,
-      sudah: document.getElementById("f_sudahDipindai").checked,
+      sudah: document.getElementById("f_sudahDipindai").value === "true",
       tanggalEntryBos: document.getElementById("f_tanggalEntryBos").value,
-      entryBos: document.getElementById("f_entryBos").checked,
+      entryBos: document.getElementById("f_entryBos").value === "true",
       keterangan: document.getElementById("f_keterangan").value.trim()
     };
     if(!data.nomorSpm || !data.tanggalSpm || !data.uraian){ return; }
