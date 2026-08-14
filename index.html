@@ -775,6 +775,58 @@
   }
 </style>
 
+
+<style id="bosUploadStyle">
+.toolbar-main{margin-bottom:8px;}
+.toolbar-import{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px;
+  padding:9px 10px;
+  margin:0 0 14px;
+  border:1px solid #cfe0e8;
+  border-radius:7px;
+  background:#f7fbfd;
+}
+.upload-label{
+  font-size:11px;
+  font-weight:700;
+  color:#55707e;
+  margin-right:3px;
+  letter-spacing:.04em;
+}
+.toolbar-import .upload-om,
+.toolbar-import .upload-bos{
+  display:inline-flex !important;
+  visibility:visible !important;
+  opacity:1 !important;
+}
+.toolbar-import .upload-om{
+  background:#fff;
+  color:var(--navy);
+  border:1px solid #b9d2df;
+}
+.toolbar-import .upload-bos{
+  background:#11749a !important;
+  color:#fff !important;
+  border:1px solid #11749a !important;
+  font-weight:700;
+  box-shadow:0 2px 5px rgba(17,116,154,.18);
+}
+.toolbar-import .upload-bos:hover{
+  background:#0d607f !important;
+}
+@media(max-width:760px){
+  .toolbar-import{align-items:stretch;}
+  .toolbar-import .upload-om,
+  .toolbar-import .upload-bos,
+  .toolbar-import #btnSheetSettings,
+  .toolbar-import #btnAdd{width:100%;justify-content:center;}
+  .upload-label{width:100%;}
+}
+</style>
+
 </head>
 <body>
 
@@ -829,7 +881,7 @@
       <div id="overviewBars" style="display:flex; flex:1; gap:6px;"></div>
     </div>
 
-    <div class="toolbar">
+    <div class="toolbar toolbar-main">
       <input type="search" id="searchInput" placeholder="Cari nomor SPM atau uraian…">
       <select id="statusFilter">
         <option value="all">Semua status scan</option>
@@ -842,6 +894,29 @@
         <option value="belum">Belum entry BOS</option>
       </select>
       <div class="spacer"></div>
+      <button class="btn outline small" id="btnExportCsv">Ekspor CSV</button>
+      <button class="btn outline small" id="btnPrint">Cetak</button>
+      <button class="btn outline small" id="btnExportJson">Simpan Data (JSON)</button>
+      <button class="btn outline small" id="btnImportJson">Muat Data</button>
+      <button class="btn outline small" id="btnClearLocal">Hapus Data Lokal</button>
+      <input type="file" id="importFile" accept="application/json">
+    </div>
+
+    <div class="toolbar toolbar-import">
+      <span class="upload-label">📥 DATA SUMBER</span>
+      <button class="btn upload-om" id="btnImportExcel" title="Unggah rekap Monitoring SPP/SPM/SP2D dari OM SPAN">
+        📤 Unggah Excel OM SPAN
+      </button>
+      <button class="btn upload-bos" id="btnImportBOS" title="Unggah data Entry BOS. Sistem mengambil Nomor SPM dan Tanggal Entry BOS.">
+        📤 Unggah Data Entry BOS
+      </button>
+      <input type="file" id="importBOSFile" accept=".xlsx,.xls,.csv">
+      <input type="file" id="importExcelFile" accept=".xlsx,.xls">
+      <button class="btn outline small" id="btnSheetSettings" title="Sinkronkan data dengan Google Sheets">
+        ☁ Google Sheets
+      </button>
+      <button class="btn" id="btnAdd">+ Tambah SPM</button>
+    </div>
       <button class="btn outline small" id="btnExportCsv">Ekspor CSV</button>
       <button class="btn outline small" id="btnPrint">Cetak</button>
       <button class="btn outline small" id="btnExportJson">Simpan Data (JSON)</button>
@@ -994,748 +1069,7 @@
     <p class="sub">Gunakan Google Sheets sebagai database bersama Tim Kerja Keuangan. Tempel URL Web App Apps Script Anda di bawah ini — cara membuatnya ada di README (berkas <code>Code.gs</code> terlampir).</p>
     <div class="form-field full" style="margin-bottom:12px;">
       <label>URL Web App Google Apps Script</label>
-      <input type="url" id="sheetUrlInput" placeholder="/**
- * MONITORING SPM
- * Backend Google Apps Script
- *
- * Spreadsheet:
- * https://docs.google.com/spreadsheets/d/11U4DwsqFv_TEc7MWrGAMcd5AYnZCtIfe8t52S6ICXFU
- */
-
-const SPREADSHEET_ID = '11U4DwsqFv_TEc7MWrGAMcd5AYnZCtIfe8t52S6ICXFU';
-const SHEET_NAME = 'Data SPM';
-
-const HEADERS = [
-  'id',
-  'nomorSpm',
-  'tanggalSpm',
-  'uraian',
-  'nilai',
-  'tanggalPindai',
-  'sudah',
-  'tanggalEntryBos',
-  'entryBos',
-  'keterangan'
-];
-
-
-/**
- * Membuka Spreadsheet
- */
-function getSpreadsheet_() {
-  return SpreadsheetApp.openById(SPREADSHEET_ID);
-}
-
-
-/**
- * Mengambil / membuat Sheet Data SPM
- */
-function getSheet_() {
-
-  const ss = getSpreadsheet_();
-
-  let sheet = ss.getSheetByName(SHEET_NAME);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-  }
-
-  sheet
-    .getRange(1, 1, 1, HEADERS.length)
-    .setValues([HEADERS]);
-
-  sheet.setFrozenRows(1);
-
-  return sheet;
-}
-
-
-/**
- * Response JSON
- */
-function jsonResponse_(data) {
-
-  return ContentService
-    .createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
-
-}
-
-
-/**
- * TEST KONEKSI
- */
-function testConnection() {
-
-  const ss = getSpreadsheet_();
-  const sheet = getSheet_();
-
-  Logger.log('Spreadsheet : ' + ss.getName());
-  Logger.log('Sheet       : ' + sheet.getName());
-  Logger.log('URL         : ' + ss.getUrl());
-
-  return 'Koneksi berhasil: ' +
-    ss.getName() +
-    ' / ' +
-    sheet.getName();
-
-}
-
-
-/**
- * GET DATA
- *
- * Digunakan index.html
- * untuk mengambil data dari Google Sheets.
- */
-function doGet(e) {
-
-  try {
-
-    const sheet = getSheet_();
-
-    const lastRow =
-      sheet.getLastRow();
-
-    if (lastRow < 2) {
-
-      return jsonResponse_({
-        ok: true,
-        records: [],
-        count: 0
-      });
-
-    }
-
-    const values =
-      sheet.getRange(
-        2,
-        1,
-        lastRow - 1,
-        HEADERS.length
-      ).getValues();
-
-    const records = [];
-
-    values.forEach(function(row) {
-
-      const kosong =
-        row.every(function(value) {
-
-          return value === '' ||
-                 value === null ||
-                 typeof value === 'undefined';
-
-        });
-
-      if (kosong) return;
-
-      const record = {};
-
-      HEADERS.forEach(function(header, index) {
-
-        let value = row[index];
-
-        /*
-         * Format tanggal
-         */
-        if (
-          value instanceof Date &&
-          (
-            header === 'tanggalSpm' ||
-            header === 'tanggalPindai' ||
-            header === 'tanggalEntryBos'
-          )
-        ) {
-
-          value =
-            Utilities.formatDate(
-              value,
-              Session.getScriptTimeZone(),
-              'yyyy-MM-dd'
-            );
-
-        }
-
-        /*
-         * Format boolean
-         */
-        if (
-          header === 'sudah' ||
-          header === 'entryBos'
-        ) {
-
-          value =
-            value === true ||
-            value === 'TRUE' ||
-            value === 'true';
-
-        }
-
-        record[header] = value;
-
-      });
-
-      records.push(record);
-
-    });
-
-    return jsonResponse_({
-
-      ok: true,
-
-      records: records,
-
-      count: records.length
-
-    });
-
-  } catch (error) {
-
-    return jsonResponse_({
-
-      ok: false,
-
-      error:
-        String(
-          error.message || error
-        )
-
-    });
-
-  }
-
-}
-
-
-/**
- * POST DATA
- *
- * Data dari index.html dikirim ke sini.
- *
- * Sistem melakukan MERGE:
- *
- * Data lama tidak dihapus.
- *
- * Status Scan:
- *   tetap dipertahankan
- *
- * Tanggal Scan:
- *   tetap dipertahankan
- *
- * Entry BOS:
- *   tetap dipertahankan
- *
- * Tanggal Entry BOS:
- *   tetap dipertahankan
- *
- * Keterangan:
- *   tetap dipertahankan
- */
-function doPost(e) {
-
-  try {
-
-    if (
-      !e ||
-      !e.postData ||
-      !e.postData.contents
-    ) {
-
-      throw new Error(
-        'Data POST tidak ditemukan.'
-      );
-
-    }
-
-    const payload =
-      JSON.parse(
-        e.postData.contents
-      );
-
-    const incoming =
-      Array.isArray(payload.records)
-        ? payload.records
-        : [];
-
-    const sheet = getSheet_();
-
-    /*
-     * ======================================================
-     * BACA DATA LAMA
-     * ======================================================
-     */
-
-    const oldRecords = {};
-
-    const lastRow =
-      sheet.getLastRow();
-
-    if (lastRow >= 2) {
-
-      const oldValues =
-        sheet.getRange(
-          2,
-          1,
-          lastRow - 1,
-          HEADERS.length
-        ).getValues();
-
-      oldValues.forEach(function(row) {
-
-        const nomor =
-          String(
-            row[1] || ''
-          ).trim();
-
-        if (!nomor) return;
-
-        oldRecords[nomor] = {
-
-          id:
-            row[0],
-
-          nomorSpm:
-            row[1],
-
-          tanggalSpm:
-            formatDate_(row[2]),
-
-          uraian:
-            row[3],
-
-          nilai:
-            row[4],
-
-          tanggalPindai:
-            formatDate_(row[5]),
-
-          sudah:
-            toBoolean_(row[6]),
-
-          tanggalEntryBos:
-            formatDate_(row[7]),
-
-          entryBos:
-            toBoolean_(row[8]),
-
-          keterangan:
-            row[9]
-
-        };
-
-      });
-
-    }
-
-
-    /*
-     * ======================================================
-     * MERGE DATA
-     * ======================================================
-     */
-
-    const merged = {};
-
-    /*
-     * Pertahankan semua data lama.
-     */
-    Object.keys(oldRecords)
-      .forEach(function(key) {
-
-        merged[key] =
-          oldRecords[key];
-
-      });
-
-
-    /*
-     * Gabungkan data baru.
-     */
-    incoming.forEach(function(record) {
-
-      const nomor =
-        String(
-          record.nomorSpm || ''
-        ).trim();
-
-      if (!nomor) return;
-
-      const old =
-        merged[nomor];
-
-
-      /*
-       * ====================================================
-       * DATA SUDAH ADA
-       * ====================================================
-       */
-
-      if (old) {
-
-        merged[nomor] = {
-
-          id:
-            record.id ||
-            old.id ||
-            Utilities.getUuid(),
-
-          nomorSpm:
-            record.nomorSpm ||
-            old.nomorSpm,
-
-          /*
-           * Data OM SPAN boleh diperbarui.
-           */
-          tanggalSpm:
-            record.tanggalSpm ||
-            old.tanggalSpm,
-
-          uraian:
-            record.uraian ||
-            old.uraian,
-
-          nilai:
-            record.nilai !== undefined &&
-            record.nilai !== null &&
-            record.nilai !== ''
-              ? Number(record.nilai)
-              : old.nilai,
-
-
-          /*
-           * ==================================================
-           * JANGAN TIMPA DATA SCAN
-           * ==================================================
-           */
-
-          tanggalPindai:
-            old.tanggalPindai ||
-            record.tanggalPindai ||
-            '',
-
-          sudah:
-            old.sudah === true ||
-            record.sudah === true,
-
-
-          /*
-           * ==================================================
-           * JANGAN TIMPA DATA ENTRY BOS
-           * ==================================================
-           */
-
-          tanggalEntryBos:
-            old.tanggalEntryBos ||
-            record.tanggalEntryBos ||
-            '',
-
-          entryBos:
-            old.entryBos === true ||
-            record.entryBos === true,
-
-
-          /*
-           * ==================================================
-           * JANGAN TIMPA KETERANGAN
-           * ==================================================
-           */
-
-          keterangan:
-            old.keterangan ||
-            record.keterangan ||
-            ''
-
-        };
-
-
-      /*
-       * ====================================================
-       * DATA BARU
-       * ====================================================
-       */
-
-      } else {
-
-        merged[nomor] = {
-
-          id:
-            record.id ||
-            Utilities.getUuid(),
-
-          nomorSpm:
-            record.nomorSpm ||
-            '',
-
-          tanggalSpm:
-            record.tanggalSpm ||
-            '',
-
-          uraian:
-            record.uraian ||
-            '',
-
-          nilai:
-            Number(
-              record.nilai || 0
-            ),
-
-          tanggalPindai:
-            record.tanggalPindai ||
-            '',
-
-          sudah:
-            record.sudah === true,
-
-          tanggalEntryBos:
-            record.tanggalEntryBos ||
-            '',
-
-          entryBos:
-            record.entryBos === true,
-
-          keterangan:
-            record.keterangan ||
-            ''
-
-        };
-
-      }
-
-    });
-
-
-    /*
-     * ======================================================
-     * HASIL MERGE
-     * ======================================================
-     */
-
-    const records =
-      Object.keys(merged)
-        .map(function(key) {
-
-          return merged[key];
-
-        });
-
-
-    /*
-     * ======================================================
-     * TULIS ULANG DATA KE SHEET
-     * ======================================================
-     *
-     * Karena sudah di-MERGE di atas,
-     * data manual tidak hilang.
-     */
-
-    if (sheet.getLastRow() > 1) {
-
-      sheet
-        .getRange(
-          2,
-          1,
-          sheet.getLastRow() - 1,
-          HEADERS.length
-        )
-        .clearContent();
-
-    }
-
-
-    if (records.length > 0) {
-
-      const rows =
-        records.map(function(record) {
-
-          return [
-
-            record.id || '',
-
-            record.nomorSpm || '',
-
-            record.tanggalSpm || '',
-
-            record.uraian || '',
-
-            Number(
-              record.nilai || 0
-            ),
-
-            record.tanggalPindai || '',
-
-            record.sudah === true,
-
-            record.tanggalEntryBos || '',
-
-            record.entryBos === true,
-
-            record.keterangan || ''
-
-          ];
-
-        });
-
-
-      sheet
-        .getRange(
-          2,
-          1,
-          rows.length,
-          HEADERS.length
-        )
-        .setValues(rows);
-
-
-      /*
-       * Format tanggal
-       */
-
-      sheet
-        .getRange(
-          2,
-          3,
-          rows.length,
-          1
-        )
-        .setNumberFormat(
-          'yyyy-mm-dd'
-        );
-
-
-      sheet
-        .getRange(
-          2,
-          6,
-          rows.length,
-          1
-        )
-        .setNumberFormat(
-          'yyyy-mm-dd'
-        );
-
-
-      sheet
-        .getRange(
-          2,
-          8,
-          rows.length,
-          1
-        )
-        .setNumberFormat(
-          'yyyy-mm-dd'
-        );
-
-
-      /*
-       * Format nilai SPM
-       */
-
-      sheet
-        .getRange(
-          2,
-          5,
-          rows.length,
-          1
-        )
-        .setNumberFormat(
-          '#,##0'
-        );
-
-    }
-
-
-    /*
-     * ======================================================
-     * RESPONSE
-     * ======================================================
-     */
-
-    return jsonResponse_({
-
-      ok: true,
-
-      count:
-        records.length,
-
-      message:
-        'Data berhasil disimpan dan digabung tanpa menghapus data sebelumnya.'
-
-    });
-
-
-  } catch (error) {
-
-    return jsonResponse_({
-
-      ok: false,
-
-      error:
-        String(
-          error.message || error
-        )
-
-    });
-
-  }
-
-}
-
-
-/**
- * ==========================================================
- * FUNGSI BANTUAN
- * ==========================================================
- */
-
-
-/**
- * Konversi tanggal.
- */
-function formatDate_(value) {
-
-  if (
-    value === null ||
-    value === undefined ||
-    value === ''
-  ) {
-
-    return '';
-
-  }
-
-  if (
-    Object.prototype.toString
-      .call(value) === '[object Date]'
-  ) {
-
-    return Utilities.formatDate(
-      value,
-      Session.getScriptTimeZone(),
-      'yyyy-MM-dd'
-    );
-
-  }
-
-  return String(value);
-
-}
-
-
-/**
- * Konversi boolean.
- */
-function toBoolean_(value) {
-
-  return (
-    value === true ||
-    value === 'TRUE' ||
-    value === 'true' ||
-    value === 1 ||
-    value === '1'
-  );
-
-}">
+      <input type="url" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/AKfycbx.../exec">
     </div>
     <p id="sheetStatus" style="font-size:11.5px; color:var(--ink-faint); margin:0 0 4px;">Belum diatur.</p>
     <div class="form-actions" style="justify-content:flex-start;">
