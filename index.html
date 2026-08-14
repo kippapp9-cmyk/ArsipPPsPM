@@ -1069,38 +1069,7 @@
     <p class="sub">Gunakan Google Sheets sebagai database bersama Tim Kerja Keuangan. Tempel URL Web App Apps Script Anda di bawah ini — cara membuatnya ada di README (berkas <code>Code.gs</code> terlampir).</p>
     <div class="form-field full" style="margin-bottom:12px;">
       <label>URL Web App Google Apps Script</label>
-      <input type="url" id="sheetUrlInput" placeholder="/**
- * Melihat jumlah data Entry BOS
- */
-function cekEntryBos() {
-
-  const sheet = getSheet_();
-
-  const data = sheet.getDataRange().getValues();
-
-  let totalBos = 0;
-
-  for (let i = 1; i < data.length; i++) {
-
-    if (
-      data[i][8] === true ||
-      data[i][8] === 'TRUE'
-    ) {
-
-      totalBos++;
-
-    }
-
-  }
-
-  Logger.log(
-    'Total Entry BOS: ' +
-    totalBos
-  );
-
-  return totalBos;
-
-}">
+      <input type="url" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/AKfycbx.../exec">
     </div>
     <p id="sheetStatus" style="font-size:11.5px; color:var(--ink-faint); margin:0 0 4px;">Belum diatur.</p>
     <div class="form-actions" style="justify-content:flex-start;">
@@ -2023,10 +1992,34 @@ function cekEntryBos() {
     var notFound = 0;
 
     // Index data existing berdasarkan nomor SPM.
+    // File Monitoring Rekap memakai Nomor SPM berakhiran A,
+    // sedangkan data OM SPAN pada aplikasi dapat berakhiran T.
+    // Cocokkan persis terlebih dahulu, lalu fallback A <-> T.
+    function normalizeSPMForMatch(nomor){
+      return String(nomor || "")
+        .toUpperCase()
+        .replace(/\\s+/g, "")
+        .replace(/[AT]$/, "");
+    }
+
     var byNomor = {};
+    var byNomorNormalized = {};
+    var duplicateNormalized = {};
+
     state.records.forEach(function(r){
       var nomor = String(r.nomorSpm || "").trim();
-      if(nomor && !byNomor[nomor]) byNomor[nomor] = r;
+      if(!nomor) return;
+
+      if(!byNomor[nomor]) byNomor[nomor] = r;
+
+      var key = normalizeSPMForMatch(nomor);
+      if(key){
+        if(byNomorNormalized[key]){
+          duplicateNormalized[key] = true;
+        }else{
+          byNomorNormalized[key] = r;
+        }
+      }
     });
 
     for(var i=hIdx+1; i<rows.length; i++){
@@ -2043,6 +2036,18 @@ function cekEntryBos() {
       nomor = nomor.trim();
 
       var rec = byNomor[nomor];
+
+      // Jika tidak ditemukan persis, cocokkan 00002A dengan 00002T.
+      if(!rec){
+        var normalizedKey = normalizeSPMForMatch(nomor);
+        if(
+          normalizedKey &&
+          byNomorNormalized[normalizedKey] &&
+          !duplicateNormalized[normalizedKey]
+        ){
+          rec = byNomorNormalized[normalizedKey];
+        }
+      }
 
       if(rec){
         // Hanya memperbarui bagian Entry BOS.
@@ -2091,7 +2096,7 @@ function cekEntryBos() {
       "Data Entry BOS berhasil dibaca.\n\n" +
       "• " + imported + " data ditambahkan/ditandai sudah Entry BOS\n" +
       "• " + updated + " data yang sebelumnya sudah Entry BOS diperbarui\n" +
-      "• " + notFound + " nomor SPM belum ada di data OM SPAN dan dibuat sebagai data sementara\n" +
+      "• " + notFound + " nomor SPM belum ditemukan dan dibuat sebagai data sementara\n" +
       (skipped ? "• " + skipped + " baris dilewati\n" : "") +
       "\nData Scan dan data OM SPAN yang sudah ada tidak dihapus.";
 
