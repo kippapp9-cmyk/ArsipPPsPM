@@ -638,6 +638,69 @@
   .pagination .page-info{min-width:92px;text-align:center;font-weight:600;}
   .pagination select{height:30px;border:1px solid var(--line-soft);border-radius:6px;background:var(--paper-raised);padding:0 7px;color:var(--ink);}
 
+
+    .page-numbers{display:flex;gap:4px;align-items:center;}
+    .page-numbers button{min-width:32px!important;padding:0 8px;}
+    .page-numbers button.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+    .pagination{flex-wrap:wrap;}
+    @media(max-width:800px){.pagination{align-items:flex-start;}.page-nav{width:100%;justify-content:center;}.pagination-left{flex-wrap:wrap;}}
+
+
+/* ===== Horizontal table scrolling ===== */
+.table-scroll-wrap{
+  width:100%;
+  max-width:100%;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:auto;
+  scrollbar-gutter:stable;
+  border-bottom:1px solid var(--line-soft,#dbe4ea);
+  cursor:default;
+}
+.table-scroll-wrap::-webkit-scrollbar{
+  height:14px;
+}
+.table-scroll-wrap::-webkit-scrollbar-track{
+  background:#eef3f6;
+  border-radius:8px;
+}
+.table-scroll-wrap::-webkit-scrollbar-thumb{
+  background:#8aa7b5;
+  border-radius:8px;
+  border:3px solid #eef3f6;
+}
+.table-scroll-wrap::-webkit-scrollbar-thumb:hover{
+  background:#5f8798;
+}
+.table-scroll-wrap table{
+  min-width:1450px;
+}
+.horizontal-scroll-hint{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:7px 0 4px;
+  font-size:11px;
+  color:var(--ink-faint,#64748b);
+}
+.horizontal-scroll-actions{
+  display:flex;
+  gap:5px;
+}
+.horizontal-scroll-actions button{
+  border:1px solid #cbd5e1;
+  background:#fff;
+  border-radius:5px;
+  padding:4px 9px;
+  cursor:pointer;
+  font-size:12px;
+}
+.horizontal-scroll-actions button:hover{
+  background:#f1f5f9;
+}
+
 </style>
 
 <style id="loginStyles">
@@ -793,7 +856,15 @@
     <div id="sheetBanner" style="display:none; margin:-4px 0 14px; font-size:11.5px; color:var(--ink-soft); background:var(--navy-tint); border:1px solid var(--line-soft); border-radius:var(--radius); padding:7px 12px;"></div>
 
     <div class="table-wrap">
-      <table>
+      <div class="horizontal-scroll-hint">
+      <span>↔ Geser ke kanan/kiri untuk melihat kolom tabel lainnya.</span>
+      <span class="horizontal-scroll-actions">
+        <button type="button" id="scrollLeftBtn" title="Geser ke kiri">◀</button>
+        <button type="button" id="scrollRightBtn" title="Geser ke kanan">▶</button>
+      </span>
+    </div>
+    <div class="table-scroll-wrap" id="tableScrollWrap">
+        <table>
         <thead>
           <tr>
             <th data-sort="no" class="no-sort">No</th>
@@ -811,18 +882,24 @@
         </thead>
         <tbody id="tbody"></tbody>
       </table>
+      </div>
     </div>
 
     <div class="pagination" id="pagination">
       <div class="pagination-left">
         <span>Tampilkan</span>
-        <select id="pageSize"><option value="10">10</option><option value="20">20</option><option value="30">30</option><option value="50">50</option></select>
+        <select id="pageSize">
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
+          <option value="30">30</option>
+          <option value="50">50</option>
+        </select>
         <span>baris per halaman</span>
       </div>
-      <div class="pagination-left">
+      <div class="pagination-left page-nav">
         <button id="pageFirst" title="Halaman pertama">«</button>
         <button id="pagePrev" title="Halaman sebelumnya">‹</button>
-        <span class="page-info" id="pageInfo">Halaman 1/1</span>
+        <span id="pageNumbers" class="page-numbers"></span>
         <button id="pageNext" title="Halaman berikutnya">›</button>
         <button id="pageLast" title="Halaman terakhir">»</button>
       </div>
@@ -1213,12 +1290,30 @@
     var prev = document.getElementById("pagePrev");
     var next = document.getElementById("pageNext");
     var last = document.getElementById("pageLast");
-    if(info) info.textContent = "Halaman " + state.currentPage + "/" + totalPages;
+    var nums = document.getElementById("pageNumbers");
+
     if(count) count.textContent = total + " data";
     if(first) first.disabled = state.currentPage <= 1;
     if(prev) prev.disabled = state.currentPage <= 1;
     if(next) next.disabled = state.currentPage >= totalPages;
     if(last) last.disabled = state.currentPage >= totalPages;
+
+    if(nums){
+      nums.innerHTML = "";
+      var maxButtons = 7;
+      var startPage = Math.max(1, state.currentPage - 3);
+      var endPage = Math.min(totalPages, startPage + maxButtons - 1);
+      startPage = Math.max(1, endPage - maxButtons + 1);
+
+      for(var p=startPage; p<=endPage; p++){
+        var b=document.createElement("button");
+        b.type="button";
+        b.textContent=String(p);
+        b.className = p===state.currentPage ? "active" : "";
+        (function(page){ b.addEventListener("click",function(){ state.currentPage=page; renderTable(); }); })(p);
+        nums.appendChild(b);
+      }
+    }
   }
   function escapeHtml(s){
     return String(s==null?"":s).replace(/[&<>"']/g, function(c){
@@ -1902,6 +1997,43 @@
 
     if(logout) logout.addEventListener("click", doLogout);
   });
+})();
+</script>
+
+
+<script id="horizontalScrollScript">
+(function(){
+  function initHorizontalScroll(){
+    var wrap = document.getElementById("tableScrollWrap");
+    var left = document.getElementById("scrollLeftBtn");
+    var right = document.getElementById("scrollRightBtn");
+    if(!wrap) return;
+
+    if(left){
+      left.addEventListener("click", function(){
+        wrap.scrollBy({left:-500, behavior:"smooth"});
+      });
+    }
+    if(right){
+      right.addEventListener("click", function(){
+        wrap.scrollBy({left:500, behavior:"smooth"});
+      });
+    }
+
+    // Mouse wheel + Shift can be used to move horizontally.
+    wrap.addEventListener("wheel", function(e){
+      if(e.shiftKey && Math.abs(e.deltaY) > 0){
+        e.preventDefault();
+        wrap.scrollLeft += e.deltaY;
+      }
+    }, {passive:false});
+  }
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", initHorizontalScroll);
+  }else{
+    initHorizontalScroll();
+  }
 })();
 </script>
 
