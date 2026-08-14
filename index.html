@@ -570,7 +570,7 @@
   .toggle-row label{font-size:12.5px; color:var(--ink); font-weight:500;}
   .toggle-row input[type=checkbox]{width:16px; height:16px;}
 
-  #importFile, #importExcelFile{display:none;}
+  #importFile, #importExcelFile, #importBOSFile{display:none;}
 
   /* ===== Toast ===== */
   .toast{
@@ -849,6 +849,8 @@
       <button class="btn outline small" id="btnClearLocal">Hapus Data Lokal</button>
       <input type="file" id="importFile" accept="application/json">
       <button class="btn outline small" id="btnImportExcel" title="Unggah rekap Monitoring SPP/SPM/SP2D (.xlsx) dari OM SPAN">&#128228; Unggah Excel OM SPAN</button>
+      <button class="btn outline small" id="btnImportBOS" title="Unggah data Entry BOS (.xlsx/.xls/.csv)">&#128228; Unggah Data Entry BOS</button>
+      <input type="file" id="importBOSFile" accept=".xlsx,.xls,.csv">
       <input type="file" id="importExcelFile" accept=".xlsx,.xls">
       <button class="btn outline small" id="btnSheetSettings" title="Sinkronkan data dengan Google Sheets">&#9729; Google Sheets</button>
       <button class="btn" id="btnAdd">+ Tambah SPM</button>
@@ -917,7 +919,7 @@
     </div>
 
     <div class="footnote">
-      <strong>Catatan:</strong> Data pada halaman ini disimpan pada <strong>penyimpanan lokal (localStorage)</strong> peramban. Data tetap tersedia setelah halaman ditutup dan dibuka kembali pada peramban/perangkat yang sama. Gunakan tombol <strong>“Simpan Data (JSON)”</strong> sebagai cadangan tambahan. Gunakan <strong>“Unggah Excel OM SPAN”</strong> untuk memuat rekap resmi <em>Monitoring SPP, SPM, dan SP2D</em> — nomor, tanggal, uraian, dan nilai SPM akan otomatis terisi; status pemindaian dan Entry BOS tetap dipertahankan; data lama yang tidak ada pada upload baru juga tidak dihapus. Jika nomor SPM sudah pernah diisi, status, tanggal, dan keterangan manual tetap dipertahankan.
+      <strong>Catatan:</strong> Data pada halaman ini disimpan pada <strong>penyimpanan lokal (localStorage)</strong> peramban. Data tetap tersedia setelah halaman ditutup dan dibuka kembali pada peramban/perangkat yang sama. Gunakan tombol <strong>“Simpan Data (JSON)”</strong> sebagai cadangan tambahan. Gunakan <strong>“Unggah Excel OM SPAN”</strong> untuk memuat nomor, tanggal, uraian, dan nilai SPM. Gunakan <strong>“Unggah Data Entry BOS”</strong> untuk memasukkan nomor SPM dan tanggal Entry BOS. Kedua sumber data akan <strong>digabung berdasarkan nomor SPM</strong>; upload ulang tidak menghapus status Scan, tanggal Scan, status Entry BOS, tanggal Entry BOS, atau keterangan yang sudah ada.
     </div>
 
   </div>
@@ -992,123 +994,7 @@
     <p class="sub">Gunakan Google Sheets sebagai database bersama Tim Kerja Keuangan. Tempel URL Web App Apps Script Anda di bawah ini — cara membuatnya ada di README (berkas <code>Code.gs</code> terlampir).</p>
     <div class="form-field full" style="margin-bottom:12px;">
       <label>URL Web App Google Apps Script</label>
-      <input type="url" id="sheetUrlInput" placeholder="/**
- * Google Apps Script backend for:
- * "Monitoring Pemindaian SPM"
- *
- * Cara pakai:
- * 1. Buat Google Sheet baru.
- * 2. Extensions -> Apps Script.
- * 3. Ganti isi Code.gs dengan kode ini.
- * 4. Deploy -> New deployment -> Web app.
- * 5. Execute as: Me.
- * 6. Who has access: Anyone (atau sesuai kebijakan organisasi Anda).
- * 7. Salin URL Web App yang berakhiran /exec.
- * 8. Tempel URL tersebut pada tombol "☁ Google Sheets" di aplikasi HTML.
- */
-
-const SHEET_NAME = 'Data SPM';
-
-const HEADERS = [
-  'id',
-  'nomorSpm',
-  'tanggalSpm',
-  'uraian',
-  'nilai',
-  'tanggalPindai',
-  'sudah',
-  'tanggalEntryBos',
-  'entryBos',
-  'keterangan'
-];
-
-function getSheet_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) throw new Error('Script harus dibuat dari Google Sheet yang menjadi database.');
-  let sh = ss.getSheetByName(SHEET_NAME);
-  if (!sh) sh = ss.insertSheet(SHEET_NAME);
-
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
-    sh.setFrozenRows(1);
-  } else {
-    const first = sh.getRange(1, 1, 1, HEADERS.length).getValues()[0];
-    const same = HEADERS.every((h, i) => String(first[i] || '') === h);
-    if (!same) {
-      sh.insertRowBefore(1);
-      sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
-      sh.setFrozenRows(1);
-    }
-  }
-  return sh;
-}
-
-function json_(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function doGet() {
-  try {
-    const sh = getSheet_();
-    const lastRow = sh.getLastRow();
-    if (lastRow < 2) return json_({ok: true, records: []});
-
-    const values = sh.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
-    const records = values
-      .filter(row => row.some(v => v !== ''))
-      .map(row => {
-        const r = {};
-        HEADERS.forEach((h, i) => r[h] = row[i]);
-        // Normalize date cells to yyyy-mm-dd for the HTML app.
-        ['tanggalSpm', 'tanggalPindai', 'tanggalEntryBos'].forEach(k => {
-          if (r[k] instanceof Date) {
-            r[k] = Utilities.formatDate(r[k], Session.getScriptTimeZone(), 'yyyy-MM-dd');
-          }
-        });
-        return r;
-      });
-
-    return json_({ok: true, records: records});
-  } catch (err) {
-    return json_({ok: false, error: String(err.message || err)});
-  }
-}
-
-function doPost(e) {
-  try {
-    const payload = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    const records = Array.isArray(payload.records) ? payload.records : [];
-    const sh = getSheet_();
-
-    // Replace the database contents atomically from the application's perspective.
-    const maxRows = Math.max(sh.getMaxRows() - 1, 1);
-    if (sh.getLastRow() > 1) {
-      sh.getRange(2, 1, sh.getLastRow() - 1, HEADERS.length).clearContent();
-    }
-
-    if (records.length) {
-      const rows = records.map(r => HEADERS.map(h => {
-        if (h === 'nilai' && r[h] !== '' && r[h] != null) return Number(r[h]) || 0;
-        if (h === 'sudah' || h === 'entryBos') return !!r[h];
-        return r[h] == null ? '' : r[h];
-      }));
-      sh.getRange(2, 1, rows.length, HEADERS.length).setValues(rows);
-
-      // Apply useful display formats.
-      sh.getRange(2, 5, rows.length, 1).setNumberFormat('#,##0');
-      sh.getRange(2, 3, rows.length, 1).setNumberFormat('yyyy-mm-dd');
-      sh.getRange(2, 6, rows.length, 1).setNumberFormat('yyyy-mm-dd');
-      sh.getRange(2, 8, rows.length, 1).setNumberFormat('yyyy-mm-dd');
-    }
-
-    return json_({ok: true, count: records.length});
-  } catch (err) {
-    return json_({ok: false, error: String(err.message || err)});
-  }
-}
-c">
+      <input type="url" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/AKfycbx.../exec">
     </div>
     <p id="sheetStatus" style="font-size:11.5px; color:var(--ink-faint); margin:0 0 4px;">Belum diatur.</p>
     <div class="form-actions" style="justify-content:flex-start;">
@@ -1902,6 +1788,230 @@ c">
       }
       e.target.value = "";
     };
+    reader.readAsArrayBuffer(file);
+  });
+
+
+  // ---------- import Data Entry BOS ----------
+  // Sumber file BOS minimal membutuhkan kolom:
+  // - Nomor SPM (berbagai variasi nama header didukung)
+  // - Tanggal Entry BOS (berbagai variasi nama header didukung)
+  //
+  // Data digabung berdasarkan nomor SPM.
+  // Jika nomor SPM belum ada dari OM SPAN, record baru dibuat.
+  // Jika nomor SPM sudah ada, hanya field Entry BOS yang diperbarui.
+  var BOS_FIELD_MAP = {
+    nomor: [
+      "nomor spm",
+      "no spm",
+      "no. spm",
+      "nomor spp/spm",
+      "no. spp/spm",
+      "no spp/spm",
+      "nomor spp spm",
+      "nomor"
+    ],
+    tanggal: [
+      "tanggal entry bos",
+      "tgl entry bos",
+      "tgl. entry bos",
+      "tanggal entry",
+      "tgl entry",
+      "tanggal bos",
+      "tgl bos",
+      "entry bos"
+    ]
+  };
+
+  function findBOSHeaderRow(rows){
+    for(var i=0;i<Math.min(rows.length,40);i++){
+      var normed = (rows[i]||[]).map(normHeader);
+      var hasNomor = colIndex(normed, BOS_FIELD_MAP.nomor) > -1;
+      var hasTanggal = colIndex(normed, BOS_FIELD_MAP.tanggal) > -1;
+      if(hasNomor && hasTanggal) return i;
+    }
+    return -1;
+  }
+
+  function parseExcelDateFlexible(v){
+    if(v===undefined || v===null || v==="") return "";
+
+    // Jika SheetJS mengembalikan Date.
+    if(Object.prototype.toString.call(v)==="[object Date]" && !isNaN(v.getTime())){
+      return v.getFullYear()+"-"+pad(v.getMonth()+1)+"-"+pad(v.getDate());
+    }
+
+    var str = String(v).trim();
+    if(!str || str==="-" || str==="—") return "";
+
+    // YYYY-MM-DD / YYYY/MM/DD
+    var m = str.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+    if(m) return m[1]+"-"+pad(parseInt(m[2],10))+"-"+pad(parseInt(m[3],10));
+
+    // DD-MM-YYYY / DD/MM/YYYY
+    m = str.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+    if(m) return m[3]+"-"+pad(parseInt(m[2],10))+"-"+pad(parseInt(m[1],10));
+
+    // Tanggal dengan nama bulan Indonesia.
+    var months = {
+      januari:1, jan:1,
+      februari:2, feb:2,
+      maret:3, mar:3,
+      april:4, apr:4,
+      mei:5,
+      juni:6, jun:6,
+      juli:7, jul:7,
+      agustus:8, agu:8, agt:8, aug:8,
+      september:9, sep:9,
+      oktober:10, okt:10, oct:10,
+      november:11, nov:11,
+      desember:12, des:12, dec:12
+    };
+    m = str.toLowerCase().match(/^(\d{1,2})\s+([a-z]+)\s+(\d{4})/);
+    if(m && months[m[2]]) {
+      return m[3]+"-"+pad(months[m[2]])+"-"+pad(parseInt(m[1],10));
+    }
+
+    // Excel serial date, jika raw:false tidak terkonversi.
+    if(/^\d+(\.\d+)?$/.test(str)){
+      var serial = Number(str);
+      if(serial > 20000 && serial < 80000){
+        var d = new Date(Date.UTC(1899,11,30) + serial*86400000);
+        return d.getUTCFullYear()+"-"+pad(d.getUTCMonth()+1)+"-"+pad(d.getUTCDate());
+      }
+    }
+
+    return "";
+  }
+
+  function importBOSWorkbook(workbook){
+    var sheetName = workbook.SheetNames[0];
+    var ws = workbook.Sheets[sheetName];
+    var rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:"", raw:false});
+
+    var hIdx = findBOSHeaderRow(rows);
+    if(hIdx === -1){
+      alert(
+        "Format data Entry BOS belum dikenali.\n\n" +
+        "Pastikan file mempunyai kolom 'Nomor SPM' dan 'Tanggal Entry BOS'."
+      );
+      return;
+    }
+
+    var header = rows[hIdx].map(normHeader);
+    var idxNomor = colIndex(header, BOS_FIELD_MAP.nomor);
+    var idxTanggal = colIndex(header, BOS_FIELD_MAP.tanggal);
+
+    var imported = 0;
+    var updated = 0;
+    var skipped = 0;
+    var notFound = 0;
+
+    // Index data existing berdasarkan nomor SPM.
+    var byNomor = {};
+    state.records.forEach(function(r){
+      var nomor = String(r.nomorSpm || "").trim();
+      if(nomor && !byNomor[nomor]) byNomor[nomor] = r;
+    });
+
+    for(var i=hIdx+1; i<rows.length; i++){
+      var row = rows[i] || [];
+      var nomor = String(row[idxNomor] || "").trim();
+      var tanggal = parseExcelDateFlexible(row[idxTanggal]);
+
+      if(!nomor || nomor === "-" || nomor === "—"){
+        skipped++;
+        continue;
+      }
+
+      // Hilangkan awalan/akhiran spasi tetapi jangan mengubah nomor SPM.
+      nomor = nomor.trim();
+
+      var rec = byNomor[nomor];
+
+      if(rec){
+        // Hanya memperbarui bagian Entry BOS.
+        var wasEntry = !!rec.entryBos;
+        rec.entryBos = true;
+
+        // Tanggal dari file BOS menjadi tanggal Entry BOS.
+        // Jika tanggal kosong, tanggal lama dipertahankan.
+        if(tanggal) rec.tanggalEntryBos = tanggal;
+
+        if(wasEntry){
+          updated++;
+        }else{
+          imported++;
+        }
+      }else{
+        // Jika data BOS masuk lebih dahulu sebelum OM SPAN,
+        // buat record sementara. Ketika OM SPAN diupload kemudian,
+        // data nomor/tanggal/uraian/nilai akan dilengkapi tanpa menghapus Entry BOS.
+        rec = {
+          id: uid(),
+          nomorSpm: nomor,
+          tanggalSpm: "",
+          uraian: "",
+          nilai: "",
+          tanggalPindai: "",
+          sudah: false,
+          tanggalEntryBos: tanggal || "",
+          entryBos: true,
+          keterangan: "Data berasal dari upload Entry BOS"
+        };
+
+        state.records.push(rec);
+        byNomor[nomor] = rec;
+        imported++;
+        notFound++;
+      }
+    }
+
+    if(imported === 0 && updated === 0){
+      alert("Tidak ada data Entry BOS yang dapat diproses.");
+      return;
+    }
+
+    var message =
+      "Data Entry BOS berhasil dibaca.\n\n" +
+      "• " + imported + " data ditambahkan/ditandai sudah Entry BOS\n" +
+      "• " + updated + " data yang sebelumnya sudah Entry BOS diperbarui\n" +
+      "• " + notFound + " nomor SPM belum ada di data OM SPAN dan dibuat sebagai data sementara\n" +
+      (skipped ? "• " + skipped + " baris dilewati\n" : "") +
+      "\nData Scan dan data OM SPAN yang sudah ada tidak dihapus.";
+
+    state.tab = "all";
+    state.currentPage = 1;
+    renderAll();
+    saveLocalData();
+    autoSheetSync();
+
+    showToast("Data Entry BOS berhasil digabung.");
+    alert(message);
+  }
+
+  document.getElementById("btnImportBOS").addEventListener("click", function(){
+    document.getElementById("importBOSFile").click();
+  });
+
+  document.getElementById("importBOSFile").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+
+    var reader = new FileReader();
+
+    reader.onload = function(evt){
+      try{
+        var data = new Uint8Array(evt.target.result);
+        var workbook = XLSX.read(data, {type:"array"});
+        importBOSWorkbook(workbook);
+      }catch(err){
+        alert("Gagal membaca data Entry BOS: " + err.message);
+      }
+
+      e.target.value = "";
+    };
+
     reader.readAsArrayBuffer(file);
   });
 
