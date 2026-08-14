@@ -1069,7 +1069,930 @@
     <p class="sub">Gunakan Google Sheets sebagai database bersama Tim Kerja Keuangan. Tempel URL Web App Apps Script Anda di bawah ini — cara membuatnya ada di README (berkas <code>Code.gs</code> terlampir).</p>
     <div class="form-field full" style="margin-bottom:12px;">
       <label>URL Web App Google Apps Script</label>
-      <input type="url" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/AKfycbx.../exec">
+      <input type="url" id="sheetUrlInput" placeholder="/**
+ * ============================================================
+ * MONITORING SPM - GOOGLE APPS SCRIPT
+ * ============================================================
+ *
+ * Spreadsheet:
+ * https://docs.google.com/spreadsheets/d/
+ * 11U4DwsqFv_TEc7MWrGAMcd5AYnZCtIfe8t52S6ICXFU
+ *
+ * Sheet:
+ * Data SPM
+ *
+ * Fitur:
+ * 1. Membaca data dari Google Sheets
+ * 2. Menyimpan data dari index.html
+ * 3. Merge data OM SPAN
+ * 4. Mempertahankan status Scan
+ * 5. Mempertahankan tanggal Scan
+ * 6. Mempertahankan status Entry BOS
+ * 7. Mempertahankan tanggal Entry BOS
+ * 8. Mempertahankan keterangan
+ * 9. Data Entry BOS digabung berdasarkan Nomor SPM
+ *
+ * ============================================================
+ */
+
+const SPREADSHEET_ID =
+  '11U4DwsqFv_TEc7MWrGAMcd5AYnZCtIfe8t52S6ICXFU';
+
+const SHEET_NAME = 'Data SPM';
+
+const HEADERS = [
+  'id',
+  'nomorSpm',
+  'tanggalSpm',
+  'uraian',
+  'nilai',
+  'tanggalPindai',
+  'sudah',
+  'tanggalEntryBos',
+  'entryBos',
+  'keterangan'
+];
+
+
+/* ============================================================
+   SPREADSHEET
+   ============================================================ */
+
+function getSpreadsheet_() {
+
+  return SpreadsheetApp.openById(
+    SPREADSHEET_ID
+  );
+
+}
+
+
+/* ============================================================
+   SHEET
+   ============================================================ */
+
+function getSheet_() {
+
+  const ss =
+    getSpreadsheet_();
+
+  let sheet =
+    ss.getSheetByName(
+      SHEET_NAME
+    );
+
+  if (!sheet) {
+
+    sheet =
+      ss.insertSheet(
+        SHEET_NAME
+      );
+
+  }
+
+  /*
+   * Pastikan header selalu tersedia.
+   */
+
+  sheet
+    .getRange(
+      1,
+      1,
+      1,
+      HEADERS.length
+    )
+    .setValues([
+      HEADERS
+    ]);
+
+  sheet.setFrozenRows(1);
+
+  return sheet;
+
+}
+
+
+/* ============================================================
+   JSON RESPONSE
+   ============================================================ */
+
+function jsonResponse_(data) {
+
+  return ContentService
+    .createTextOutput(
+      JSON.stringify(data)
+    )
+    .setMimeType(
+      ContentService.MimeType.JSON
+    );
+
+}
+
+
+/* ============================================================
+   TEST CONNECTION
+   ============================================================ */
+
+function testConnection() {
+
+  const ss =
+    getSpreadsheet_();
+
+  const sheet =
+    getSheet_();
+
+  Logger.log(
+    'Spreadsheet : ' +
+    ss.getName()
+  );
+
+  Logger.log(
+    'Sheet : ' +
+    sheet.getName()
+  );
+
+  Logger.log(
+    'URL : ' +
+    ss.getUrl()
+  );
+
+  return (
+    'Koneksi berhasil: ' +
+    ss.getName() +
+    ' / ' +
+    sheet.getName()
+  );
+
+}
+
+
+/* ============================================================
+   GET
+   ============================================================ */
+
+function doGet(e) {
+
+  try {
+
+    const sheet =
+      getSheet_();
+
+    const lastRow =
+      sheet.getLastRow();
+
+    /*
+     * Belum ada data.
+     */
+
+    if (lastRow < 2) {
+
+      return jsonResponse_({
+
+        ok: true,
+
+        records: [],
+
+        count: 0
+
+      });
+
+    }
+
+
+    /*
+     * Ambil data.
+     */
+
+    const values =
+      sheet.getRange(
+        2,
+        1,
+        lastRow - 1,
+        HEADERS.length
+      ).getValues();
+
+
+    const records = [];
+
+
+    values.forEach(function(row) {
+
+      /*
+       * Abaikan baris kosong.
+       */
+
+      const kosong =
+        row.every(function(value) {
+
+          return (
+            value === '' ||
+            value === null ||
+            typeof value ===
+              'undefined'
+          );
+
+        });
+
+      if (kosong) return;
+
+
+      const record = {};
+
+
+      HEADERS.forEach(
+        function(header, index) {
+
+          let value =
+            row[index];
+
+
+          /*
+           * Konversi tanggal.
+           */
+
+          if (
+            value instanceof Date &&
+            (
+              header ===
+                'tanggalSpm' ||
+              header ===
+                'tanggalPindai' ||
+              header ===
+                'tanggalEntryBos'
+            )
+          ) {
+
+            value =
+              Utilities.formatDate(
+                value,
+                Session.getScriptTimeZone(),
+                'yyyy-MM-dd'
+              );
+
+          }
+
+
+          /*
+           * Konversi boolean.
+           */
+
+          if (
+            header === 'sudah' ||
+            header === 'entryBos'
+          ) {
+
+            value =
+              toBoolean_(value);
+
+          }
+
+
+          record[header] =
+            value;
+
+        }
+      );
+
+
+      records.push(
+        record
+      );
+
+    });
+
+
+    return jsonResponse_({
+
+      ok: true,
+
+      records: records,
+
+      count:
+        records.length
+
+    });
+
+
+  } catch (error) {
+
+    return jsonResponse_({
+
+      ok: false,
+
+      error:
+        String(
+          error.message ||
+          error
+        )
+
+    });
+
+  }
+
+}
+
+
+/* ============================================================
+   POST
+   ============================================================ */
+
+function doPost(e) {
+
+  try {
+
+    if (
+      !e ||
+      !e.postData ||
+      !e.postData.contents
+    ) {
+
+      throw new Error(
+        'Data POST tidak ditemukan.'
+      );
+
+    }
+
+
+    const payload =
+      JSON.parse(
+        e.postData.contents
+      );
+
+
+    const incoming =
+      Array.isArray(
+        payload.records
+      )
+        ? payload.records
+        : [];
+
+
+    const sheet =
+      getSheet_();
+
+
+    /*
+     * ========================================================
+     * BACA DATA LAMA
+     * ========================================================
+     */
+
+    const oldRecords = {};
+
+    const lastRow =
+      sheet.getLastRow();
+
+
+    if (lastRow >= 2) {
+
+      const oldValues =
+        sheet.getRange(
+          2,
+          1,
+          lastRow - 1,
+          HEADERS.length
+        ).getValues();
+
+
+      oldValues.forEach(
+        function(row) {
+
+          const nomor =
+            String(
+              row[1] || ''
+            ).trim();
+
+
+          if (!nomor) return;
+
+
+          oldRecords[nomor] = {
+
+            id:
+              row[0],
+
+            nomorSpm:
+              row[1],
+
+            tanggalSpm:
+              formatDate_(
+                row[2]
+              ),
+
+            uraian:
+              row[3],
+
+            nilai:
+              row[4],
+
+            tanggalPindai:
+              formatDate_(
+                row[5]
+              ),
+
+            sudah:
+              toBoolean_(
+                row[6]
+              ),
+
+            tanggalEntryBos:
+              formatDate_(
+                row[7]
+              ),
+
+            entryBos:
+              toBoolean_(
+                row[8]
+              ),
+
+            keterangan:
+              row[9]
+
+          };
+
+        }
+      );
+
+    }
+
+
+    /*
+     * ========================================================
+     * MERGE
+     * ========================================================
+     */
+
+    const merged = {};
+
+
+    /*
+     * Masukkan semua data lama.
+     */
+
+    Object.keys(
+      oldRecords
+    ).forEach(
+      function(key) {
+
+        merged[key] =
+          oldRecords[key];
+
+      }
+    );
+
+
+    /*
+     * Gabungkan data baru.
+     */
+
+    incoming.forEach(
+      function(record) {
+
+        const nomor =
+          String(
+            record.nomorSpm ||
+            ''
+          ).trim();
+
+
+        if (!nomor) return;
+
+
+        const old =
+          merged[nomor];
+
+
+        /*
+         * ====================================================
+         * NOMOR SPM SUDAH ADA
+         * ====================================================
+         */
+
+        if (old) {
+
+          merged[nomor] = {
+
+            /*
+             * ID
+             */
+
+            id:
+              record.id ||
+              old.id ||
+              Utilities.getUuid(),
+
+
+            /*
+             * NOMOR SPM
+             */
+
+            nomorSpm:
+              record.nomorSpm ||
+              old.nomorSpm,
+
+
+            /*
+             * DATA OM SPAN
+             */
+
+            tanggalSpm:
+              record.tanggalSpm ||
+              old.tanggalSpm,
+
+            uraian:
+              record.uraian ||
+              old.uraian,
+
+            nilai:
+              (
+                record.nilai !==
+                  undefined &&
+                record.nilai !==
+                  null &&
+                record.nilai !== ''
+              )
+                ? Number(
+                    record.nilai
+                  )
+                : old.nilai,
+
+
+            /*
+             * =================================================
+             * STATUS SCAN
+             * =================================================
+             *
+             * Jika sudah pernah diisi:
+             * jangan ditimpa upload OM SPAN.
+             */
+
+            tanggalPindai:
+              old.tanggalPindai ||
+              record.tanggalPindai ||
+              '',
+
+            sudah:
+              old.sudah === true ||
+              record.sudah === true,
+
+
+            /*
+             * =================================================
+             * ENTRY BOS
+             * =================================================
+             *
+             * Jika sudah pernah diisi:
+             * jangan ditimpa upload OM SPAN.
+             */
+
+            tanggalEntryBos:
+              old.tanggalEntryBos ||
+              record.tanggalEntryBos ||
+              '',
+
+            entryBos:
+              old.entryBos === true ||
+              record.entryBos === true,
+
+
+            /*
+             * =================================================
+             * KETERANGAN
+             * =================================================
+             */
+
+            keterangan:
+              old.keterangan ||
+              record.keterangan ||
+              ''
+
+          };
+
+
+        } else {
+
+
+          /*
+           * ==================================================
+           * NOMOR SPM BARU
+           * ==================================================
+           */
+
+          merged[nomor] = {
+
+            id:
+              record.id ||
+              Utilities.getUuid(),
+
+            nomorSpm:
+              record.nomorSpm ||
+              '',
+
+            tanggalSpm:
+              record.tanggalSpm ||
+              '',
+
+            uraian:
+              record.uraian ||
+              '',
+
+            nilai:
+              Number(
+                record.nilai ||
+                0
+              ),
+
+            tanggalPindai:
+              record.tanggalPindai ||
+              '',
+
+            sudah:
+              record.sudah === true,
+
+            tanggalEntryBos:
+              record.tanggalEntryBos ||
+              '',
+
+            entryBos:
+              record.entryBos === true,
+
+            keterangan:
+              record.keterangan ||
+              ''
+
+          };
+
+        }
+
+      }
+    );
+
+
+    /*
+     * ========================================================
+     * HASIL MERGE
+     * ========================================================
+     */
+
+    const records =
+      Object.keys(
+        merged
+      ).map(
+        function(key) {
+
+          return merged[key];
+
+        }
+      );
+
+
+    /*
+     * ========================================================
+     * BERSIHKAN DATA LAMA
+     * ========================================================
+     *
+     * Hanya isi data.
+     * Tidak mengubah header.
+     */
+
+    if (
+      sheet.getLastRow() > 1
+    ) {
+
+      sheet
+        .getRange(
+          2,
+          1,
+          sheet.getLastRow() - 1,
+          HEADERS.length
+        )
+        .clearContent();
+
+    }
+
+
+    /*
+     * ========================================================
+     * TULIS DATA HASIL MERGE
+     * ========================================================
+     */
+
+    if (
+      records.length > 0
+    ) {
+
+      const rows =
+        records.map(
+          function(record) {
+
+            return [
+
+              record.id || '',
+
+              record.nomorSpm ||
+                '',
+
+              record.tanggalSpm ||
+                '',
+
+              record.uraian ||
+                '',
+
+              Number(
+                record.nilai ||
+                0
+              ),
+
+              record.tanggalPindai ||
+                '',
+
+              record.sudah === true,
+
+              record.tanggalEntryBos ||
+                '',
+
+              record.entryBos === true,
+
+              record.keterangan ||
+                ''
+
+            ];
+
+          }
+        );
+
+
+      sheet
+        .getRange(
+          2,
+          1,
+          rows.length,
+          HEADERS.length
+        )
+        .setValues(
+          rows
+        );
+
+
+      /*
+       * Format tanggal SPM.
+       */
+
+      sheet
+        .getRange(
+          2,
+          3,
+          rows.length,
+          1
+        )
+        .setNumberFormat(
+          'yyyy-mm-dd'
+        );
+
+
+      /*
+       * Format tanggal Scan.
+       */
+
+      sheet
+        .getRange(
+          2,
+          6,
+          rows.length,
+          1
+        )
+        .setNumberFormat(
+          'yyyy-mm-dd'
+        );
+
+
+      /*
+       * Format tanggal Entry BOS.
+       */
+
+      sheet
+        .getRange(
+          2,
+          8,
+          rows.length,
+          1
+        )
+        .setNumberFormat(
+          'yyyy-mm-dd'
+        );
+
+
+      /*
+       * Format nilai.
+       */
+
+      sheet
+        .getRange(
+          2,
+          5,
+          rows.length,
+          1
+        )
+        .setNumberFormat(
+          '#,##0'
+        );
+
+    }
+
+
+    /*
+     * ========================================================
+     * RESPONSE
+     * ========================================================
+     */
+
+    return jsonResponse_({
+
+      ok: true,
+
+      count:
+        records.length,
+
+      message:
+        'Data berhasil disimpan dan digabung tanpa menghapus data sebelumnya.'
+
+    });
+
+
+  } catch (error) {
+
+    return jsonResponse_({
+
+      ok: false,
+
+      error:
+        String(
+          error.message ||
+          error
+        )
+
+    });
+
+  }
+
+}
+
+
+/* ============================================================
+   FUNGSI BANTUAN
+   ============================================================ */
+
+
+/**
+ * Format tanggal menjadi YYYY-MM-DD
+ */
+function formatDate_(value) {
+
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+
+    return '';
+
+  }
+
+
+  if (
+    Object.prototype.toString
+      .call(value) ===
+      '[object Date]'
+  ) {
+
+    return Utilities.formatDate(
+      value,
+      Session.getScriptTimeZone(),
+      'yyyy-MM-dd'
+    );
+
+  }
+
+
+  return String(value);
+
+}
+
+
+/**
+ * Konversi nilai menjadi boolean.
+ */
+function toBoolean_(value) {
+
+  return (
+    value === true ||
+    value === 'TRUE' ||
+    value === 'true' ||
+    value === 1 ||
+    value === '1'
+  );
+
+}">
     </div>
     <p id="sheetStatus" style="font-size:11.5px; color:var(--ink-faint); margin:0 0 4px;">Belum diatur.</p>
     <div class="form-actions" style="justify-content:flex-start;">
