@@ -992,7 +992,123 @@
     <p class="sub">Gunakan Google Sheets sebagai database bersama Tim Kerja Keuangan. Tempel URL Web App Apps Script Anda di bawah ini — cara membuatnya ada di README (berkas <code>Code.gs</code> terlampir).</p>
     <div class="form-field full" style="margin-bottom:12px;">
       <label>URL Web App Google Apps Script</label>
-      <input type="url" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/AKfycbx.../exec">
+      <input type="url" id="sheetUrlInput" placeholder="/**
+ * Google Apps Script backend for:
+ * "Monitoring Pemindaian SPM"
+ *
+ * Cara pakai:
+ * 1. Buat Google Sheet baru.
+ * 2. Extensions -> Apps Script.
+ * 3. Ganti isi Code.gs dengan kode ini.
+ * 4. Deploy -> New deployment -> Web app.
+ * 5. Execute as: Me.
+ * 6. Who has access: Anyone (atau sesuai kebijakan organisasi Anda).
+ * 7. Salin URL Web App yang berakhiran /exec.
+ * 8. Tempel URL tersebut pada tombol "☁ Google Sheets" di aplikasi HTML.
+ */
+
+const SHEET_NAME = 'Data SPM';
+
+const HEADERS = [
+  'id',
+  'nomorSpm',
+  'tanggalSpm',
+  'uraian',
+  'nilai',
+  'tanggalPindai',
+  'sudah',
+  'tanggalEntryBos',
+  'entryBos',
+  'keterangan'
+];
+
+function getSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('Script harus dibuat dari Google Sheet yang menjadi database.');
+  let sh = ss.getSheetByName(SHEET_NAME);
+  if (!sh) sh = ss.insertSheet(SHEET_NAME);
+
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+    sh.setFrozenRows(1);
+  } else {
+    const first = sh.getRange(1, 1, 1, HEADERS.length).getValues()[0];
+    const same = HEADERS.every((h, i) => String(first[i] || '') === h);
+    if (!same) {
+      sh.insertRowBefore(1);
+      sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+      sh.setFrozenRows(1);
+    }
+  }
+  return sh;
+}
+
+function json_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet() {
+  try {
+    const sh = getSheet_();
+    const lastRow = sh.getLastRow();
+    if (lastRow < 2) return json_({ok: true, records: []});
+
+    const values = sh.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+    const records = values
+      .filter(row => row.some(v => v !== ''))
+      .map(row => {
+        const r = {};
+        HEADERS.forEach((h, i) => r[h] = row[i]);
+        // Normalize date cells to yyyy-mm-dd for the HTML app.
+        ['tanggalSpm', 'tanggalPindai', 'tanggalEntryBos'].forEach(k => {
+          if (r[k] instanceof Date) {
+            r[k] = Utilities.formatDate(r[k], Session.getScriptTimeZone(), 'yyyy-MM-dd');
+          }
+        });
+        return r;
+      });
+
+    return json_({ok: true, records: records});
+  } catch (err) {
+    return json_({ok: false, error: String(err.message || err)});
+  }
+}
+
+function doPost(e) {
+  try {
+    const payload = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    const records = Array.isArray(payload.records) ? payload.records : [];
+    const sh = getSheet_();
+
+    // Replace the database contents atomically from the application's perspective.
+    const maxRows = Math.max(sh.getMaxRows() - 1, 1);
+    if (sh.getLastRow() > 1) {
+      sh.getRange(2, 1, sh.getLastRow() - 1, HEADERS.length).clearContent();
+    }
+
+    if (records.length) {
+      const rows = records.map(r => HEADERS.map(h => {
+        if (h === 'nilai' && r[h] !== '' && r[h] != null) return Number(r[h]) || 0;
+        if (h === 'sudah' || h === 'entryBos') return !!r[h];
+        return r[h] == null ? '' : r[h];
+      }));
+      sh.getRange(2, 1, rows.length, HEADERS.length).setValues(rows);
+
+      // Apply useful display formats.
+      sh.getRange(2, 5, rows.length, 1).setNumberFormat('#,##0');
+      sh.getRange(2, 3, rows.length, 1).setNumberFormat('yyyy-mm-dd');
+      sh.getRange(2, 6, rows.length, 1).setNumberFormat('yyyy-mm-dd');
+      sh.getRange(2, 8, rows.length, 1).setNumberFormat('yyyy-mm-dd');
+    }
+
+    return json_({ok: true, count: records.length});
+  } catch (err) {
+    return json_({ok: false, error: String(err.message || err)});
+  }
+}
+c">
     </div>
     <p id="sheetStatus" style="font-size:11.5px; color:var(--ink-faint); margin:0 0 4px;">Belum diatur.</p>
     <div class="form-actions" style="justify-content:flex-start;">
