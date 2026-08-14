@@ -1068,7 +1068,418 @@
     <p class="sub">Gunakan Google Sheets sebagai database bersama Tim Kerja Keuangan. Tempel URL Web App Apps Script Anda di bawah ini — cara membuatnya ada di README (berkas <code>Code.gs</code> terlampir).</p>
     <div class="form-field full" style="margin-bottom:12px;">
       <label>URL Web App Google Apps Script</label>
-      <input type="url" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/AKfycbx.../exec">
+      <input type="url" id="sheetUrlInput" placeholder="/**
+ * MONITORING SPM - GOOGLE APPS SCRIPT
+ * Final: OM SPAN + Entry BOS (Monitoring Rekap)
+ *
+ * Spreadsheet:
+ * https://docs.google.com/spreadsheets/d/11U4DwsqFv_TEc7MWrGAMcd5AYnZCtIfe8t52S6ICXFU/edit
+ */
+
+const SPREADSHEET_ID = '11U4DwsqFv_TEc7MWrGAMcd5AYnZCtIfe8t52S6ICXFU';
+const SHEET_NAME = 'Data SPM';
+
+const HEADERS = [
+  'id',
+  'nomorSpm',
+  'tanggalSpm',
+  'uraian',
+  'nilai',
+  'tanggalPindai',
+  'sudah',
+  'tanggalEntryBos',
+  'entryBos',
+  'keterangan'
+];
+
+/**
+ * Kunci pencocokan SPM.
+ * Monitoring Rekap menggunakan akhiran A,
+ * sedangkan OM SPAN/aplikasi menggunakan akhiran T.
+ * Contoh: 00002A dan 00002T -> 00002.
+ */
+function normalizeSpmKey_(nomor) {
+  return String(nomor || '')
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/[AT]$/, '');
+}
+
+function getSpreadsheet_() {
+  return SpreadsheetApp.openById(SPREADSHEET_ID);
+}
+
+function getSheet_() {
+  const ss = getSpreadsheet_();
+  let sheet = ss.getSheetByName(SHEET_NAME);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME);
+  }
+
+  sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+  sheet.setFrozenRows(1);
+
+  return sheet;
+}
+
+function jsonResponse_(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function testConnection() {
+  const ss = getSpreadsheet_();
+  const sheet = getSheet_();
+
+  Logger.log('Spreadsheet: ' + ss.getName());
+  Logger.log('Sheet: ' + sheet.getName());
+  Logger.log('URL: ' + ss.getUrl());
+
+  return 'Koneksi berhasil: ' + ss.getName() + ' / ' + sheet.getName();
+}
+
+/**
+ * GET: mengambil seluruh data dari Google Sheets.
+ */
+function doGet(e) {
+  try {
+    const sheet = getSheet_();
+    const lastRow = sheet.getLastRow();
+
+    if (lastRow < 2) {
+      return jsonResponse_({
+        ok: true,
+        records: [],
+        count: 0
+      });
+    }
+
+    const values = sheet
+      .getRange(2, 1, lastRow - 1, HEADERS.length)
+      .getValues();
+
+    const records = [];
+
+    values.forEach(function(row) {
+      const kosong = row.every(function(value) {
+        return value === '' || value === null || typeof value === 'undefined';
+      });
+
+      if (kosong) return;
+
+      const record = {};
+
+      HEADERS.forEach(function(header, index) {
+        let value = row[index];
+
+        if (
+          value instanceof Date &&
+          (
+            header === 'tanggalSpm' ||
+            header === 'tanggalPindai' ||
+            header === 'tanggalEntryBos'
+          )
+        ) {
+          value = Utilities.formatDate(
+            value,
+            Session.getScriptTimeZone(),
+            'yyyy-MM-dd'
+          );
+        }
+
+        if (header === 'sudah' || header === 'entryBos') {
+          value = toBoolean_(value);
+        }
+
+        record[header] = value;
+      });
+
+      records.push(record);
+    });
+
+    return jsonResponse_({
+      ok: true,
+      records: records,
+      count: records.length
+    });
+
+  } catch (error) {
+    return jsonResponse_({
+      ok: false,
+      error: String(error.message || error)
+    });
+  }
+}
+
+/**
+ * POST: menyimpan data dari index.html.
+ *
+ * MERGE dilakukan berdasarkan kunci SPM:
+ * 00002A == 00002T
+ *
+ * Data manual tidak ditimpa:
+ * - tanggalPindai
+ * - sudah
+ * - tanggalEntryBos
+ * - entryBos
+ * - keterangan
+ */
+function doPost(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      throw new Error('Data POST tidak ditemukan.');
+    }
+
+    const payload = JSON.parse(e.postData.contents);
+    const incoming = Array.isArray(payload.records) ? payload.records : [];
+    const sheet = getSheet_();
+
+    /*
+     * Baca data lama dan index berdasarkan kunci SPM.
+     */
+    const merged = {};
+    const keyDisplay = {};
+
+    const lastRow = sheet.getLastRow();
+
+    if (lastRow >= 2) {
+      const oldValues = sheet
+        .getRange(2, 1, lastRow - 1, HEADERS.length)
+        .getValues();
+
+      oldValues.forEach(function(row) {
+        const nomor = String(row[1] || '').trim();
+        if (!nomor) return;
+
+        const key = normalizeSpmKey_(nomor);
+        if (!key) return;
+
+        /*
+         * Jika ada duplikasi lama dengan key sama,
+         * pertahankan record pertama dan gabungkan data manual
+         * dari record berikutnya bila ada.
+         */
+        if (!merged[key]) {
+          merged[key] = {
+            id: row[0] || Utilities.getUuid(),
+            nomorSpm: row[1] || '',
+            tanggalSpm: formatDate_(row[2]),
+            uraian: row[3] || '',
+            nilai: row[4] || '',
+            tanggalPindai: formatDate_(row[5]),
+            sudah: toBoolean_(row[6]),
+            tanggalEntryBos: formatDate_(row[7]),
+            entryBos: toBoolean_(row[8]),
+            keterangan: row[9] || ''
+          };
+          keyDisplay[key] = nomor;
+        } else {
+          const existing = merged[key];
+
+          if (!existing.tanggalPindai) {
+            existing.tanggalPindai = formatDate_(row[5]);
+          }
+          existing.sudah = existing.sudah || toBoolean_(row[6]);
+
+          if (!existing.tanggalEntryBos) {
+            existing.tanggalEntryBos = formatDate_(row[7]);
+          }
+          existing.entryBos = existing.entryBos || toBoolean_(row[8]);
+
+          if (!existing.keterangan) {
+            existing.keterangan = row[9] || '';
+          }
+        }
+      });
+    }
+
+    /*
+     * Merge data dari index.html.
+     */
+    incoming.forEach(function(record) {
+      const nomor = String(record.nomorSpm || '').trim();
+      if (!nomor) return;
+
+      const key = normalizeSpmKey_(nomor);
+      if (!key) return;
+
+      if (merged[key]) {
+        const old = merged[key];
+
+        /*
+         * Nomor yang sudah berasal dari OM SPAN/T
+         * dipertahankan sebagai nomor utama jika ada.
+         * Jika belum ada, gunakan nomor baru.
+         */
+        const oldNomor = String(old.nomorSpm || '').trim();
+        const newNomor = nomor;
+
+        if (!oldNomor) {
+          old.nomorSpm = newNomor;
+        } else if (/[T]$/i.test(newNomor) && !/[T]$/i.test(oldNomor)) {
+          old.nomorSpm = newNomor;
+        }
+
+        /*
+         * Data OM SPAN boleh melengkapi/memperbarui.
+         */
+        if (record.tanggalSpm) {
+          old.tanggalSpm = record.tanggalSpm;
+        }
+
+        if (record.uraian) {
+          old.uraian = record.uraian;
+        }
+
+        if (
+          record.nilai !== undefined &&
+          record.nilai !== null &&
+          record.nilai !== ''
+        ) {
+          old.nilai = Number(record.nilai);
+        }
+
+        /*
+         * DATA MANUAL: jangan ditimpa.
+         */
+        if (!old.tanggalPindai && record.tanggalPindai) {
+          old.tanggalPindai = record.tanggalPindai;
+        }
+
+        old.sudah = old.sudah || record.sudah === true;
+
+        if (!old.tanggalEntryBos && record.tanggalEntryBos) {
+          old.tanggalEntryBos = record.tanggalEntryBos;
+        }
+
+        old.entryBos = old.entryBos || record.entryBos === true;
+
+        if (!old.keterangan && record.keterangan) {
+          old.keterangan = record.keterangan;
+        }
+
+        if (!old.id) {
+          old.id = record.id || Utilities.getUuid();
+        }
+
+      } else {
+        merged[key] = {
+          id: record.id || Utilities.getUuid(),
+          nomorSpm: nomor,
+          tanggalSpm: record.tanggalSpm || '',
+          uraian: record.uraian || '',
+          nilai: Number(record.nilai || 0),
+          tanggalPindai: record.tanggalPindai || '',
+          sudah: record.sudah === true,
+          tanggalEntryBos: record.tanggalEntryBos || '',
+          entryBos: record.entryBos === true,
+          keterangan: record.keterangan || ''
+        };
+
+        keyDisplay[key] = nomor;
+      }
+    });
+
+    /*
+     * Susun hasil akhir.
+     */
+    const records = Object.keys(merged).map(function(key) {
+      return merged[key];
+    });
+
+    /*
+     * Hapus isi data lama, tetapi header tetap.
+     */
+    if (sheet.getLastRow() > 1) {
+      sheet
+        .getRange(2, 1, sheet.getLastRow() - 1, HEADERS.length)
+        .clearContent();
+    }
+
+    /*
+     * Tulis hasil merge.
+     */
+    if (records.length > 0) {
+      const rows = records.map(function(record) {
+        return [
+          record.id || '',
+          record.nomorSpm || '',
+          record.tanggalSpm || '',
+          record.uraian || '',
+          Number(record.nilai || 0),
+          record.tanggalPindai || '',
+          record.sudah === true,
+          record.tanggalEntryBos || '',
+          record.entryBos === true,
+          record.keterangan || ''
+        ];
+      });
+
+      sheet
+        .getRange(2, 1, rows.length, HEADERS.length)
+        .setValues(rows);
+
+      sheet
+        .getRange(2, 3, rows.length, 1)
+        .setNumberFormat('yyyy-mm-dd');
+
+      sheet
+        .getRange(2, 6, rows.length, 1)
+        .setNumberFormat('yyyy-mm-dd');
+
+      sheet
+        .getRange(2, 8, rows.length, 1)
+        .setNumberFormat('yyyy-mm-dd');
+
+      sheet
+        .getRange(2, 5, rows.length, 1)
+        .setNumberFormat('#,##0');
+    }
+
+    return jsonResponse_({
+      ok: true,
+      count: records.length,
+      message: 'Data berhasil disimpan dan digabung.'
+    });
+
+  } catch (error) {
+    return jsonResponse_({
+      ok: false,
+      error: String(error.message || error)
+    });
+  }
+}
+
+function formatDate_(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+
+  if (
+    Object.prototype.toString.call(value) === '[object Date]'
+  ) {
+    return Utilities.formatDate(
+      value,
+      Session.getScriptTimeZone(),
+      'yyyy-MM-dd'
+    );
+  }
+
+  return String(value);
+}
+
+function toBoolean_(value) {
+  return (
+    value === true ||
+    value === 'TRUE' ||
+    value === 'true' ||
+    value === 1 ||
+    value === '1'
+  );
+}
+">
     </div>
     <p id="sheetStatus" style="font-size:11.5px; color:var(--ink-faint); margin:0 0 4px;">Belum diatur.</p>
     <div class="form-actions" style="justify-content:flex-start;">
