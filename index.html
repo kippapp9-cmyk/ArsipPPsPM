@@ -244,9 +244,12 @@
   /* ===== Summary cards ===== */
   .summary-row{
     display:grid;
-    grid-template-columns:repeat(4, 1fr);
+    grid-template-columns:repeat(5, 1fr);
     gap:14px;
     margin-bottom:20px;
+  }
+  @media(max-width:1050px){
+    .summary-row{grid-template-columns:repeat(3,1fr);}
   }
   .card{
     background:var(--paper);
@@ -917,19 +920,6 @@
       </button>
       <button class="btn" id="btnAdd">+ Tambah SPM</button>
     </div>
-      <button class="btn outline small" id="btnExportCsv">Ekspor CSV</button>
-      <button class="btn outline small" id="btnPrint">Cetak</button>
-      <button class="btn outline small" id="btnExportJson">Simpan Data (JSON)</button>
-      <button class="btn outline small" id="btnImportJson">Muat Data</button>
-      <button class="btn outline small" id="btnClearLocal">Hapus Data Lokal</button>
-      <input type="file" id="importFile" accept="application/json">
-      <button class="btn outline small" id="btnImportExcel" title="Unggah rekap Monitoring SPP/SPM/SP2D (.xlsx) dari OM SPAN">&#128228; Unggah Excel OM SPAN</button>
-      <button class="btn outline small" id="btnImportBOS" title="Unggah data Entry BOS (.xlsx/.xls/.csv)">&#128228; Unggah Data Entry BOS</button>
-      <input type="file" id="importBOSFile" accept=".xlsx,.xls,.csv">
-      <input type="file" id="importExcelFile" accept=".xlsx,.xls">
-      <button class="btn outline small" id="btnSheetSettings" title="Sinkronkan data dengan Google Sheets">&#9729; Google Sheets</button>
-      <button class="btn" id="btnAdd">+ Tambah SPM</button>
-    </div>
     <div id="sheetBanner" style="display:none; margin:-4px 0 14px; font-size:11.5px; color:var(--ink-soft); background:var(--navy-tint); border:1px solid var(--line-soft); border-radius:var(--radius); padding:7px 12px;"></div>
 
     <div class="table-wrap">
@@ -1069,7 +1059,7 @@
     <p class="sub">Gunakan Google Sheets sebagai database bersama Tim Kerja Keuangan. Tempel URL Web App Apps Script Anda di bawah ini — cara membuatnya ada di README (berkas <code>Code.gs</code> terlampir).</p>
     <div class="form-field full" style="margin-bottom:12px;">
       <label>URL Web App Google Apps Script</label>
-      <input type="url" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/AKfycbzGb1xCOzQyrHXVxfWFlYj6PDPQKUR-6NWlLrVSQ74HkZC0iWA7mQv4QipQ_9AAuSmAEw/exec">
+      <input type="url" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/AKfycbx.../exec">
     </div>
     <p id="sheetStatus" style="font-size:11.5px; color:var(--ink-faint); margin:0 0 4px;">Belum diatur.</p>
     <div class="form-actions" style="justify-content:flex-start;">
@@ -1276,7 +1266,8 @@
       card("Total SPM", total, null, "label periode: " + (state.tab==="all" ? "Tahun "+state.year : MONTHS[state.tab]+" "+state.year)) +
       card("Sudah Dipindai", sudah, "accent-green", null) +
       card("Belum Dipindai", belum, "accent-red", null) +
-      cardProgress("Progres Pemindaian", pct);
+      cardProgress("Progres Pemindaian", pct) +
+      cardBosProgress(list);
 
     function card(label, value, accent, note){
       return '<div class="card '+(accent||"")+'">' +
@@ -1290,6 +1281,19 @@
         '<p class="label">'+label+'</p>' +
         '<p class="value">'+pct+'<small>%</small></p>' +
         '<div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div>' +
+        '</div>';
+    }
+    function cardBosProgress(rows){
+      var bosSudah = rows.filter(function(r){
+        return r.entryBos === true || r.entryBos === "true" || r.entryBos === "TRUE" || r.entryBos === 1;
+      }).length;
+      var bosBelum = rows.length - bosSudah;
+      var bosPct = rows.length ? Math.round((bosSudah/rows.length)*100) : 0;
+      return '<div class="card bos-progress-card">' +
+        '<p class="label">Progres Entry BOS</p>' +
+        '<p class="value" style="color:var(--navy);">'+bosPct+'<small>%</small></p>' +
+        '<div class="progress-track"><div class="progress-fill" style="width:'+bosPct+'%;background:var(--stamp-green);"></div></div>' +
+        '<p style="font-size:10.5px;color:var(--ink-faint);margin:7px 0 0;">'+bosSudah+' sudah &nbsp;•&nbsp; '+bosBelum+' belum</p>' +
         '</div>';
     }
   }
