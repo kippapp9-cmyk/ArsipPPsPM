@@ -1069,7 +1069,38 @@
     <p class="sub">Gunakan Google Sheets sebagai database bersama Tim Kerja Keuangan. Tempel URL Web App Apps Script Anda di bawah ini — cara membuatnya ada di README (berkas <code>Code.gs</code> terlampir).</p>
     <div class="form-field full" style="margin-bottom:12px;">
       <label>URL Web App Google Apps Script</label>
-      <input type="url" id="sheetUrlInput" placeholder="https://script.google.com/macros/s/AKfycbx.../exec">
+      <input type="url" id="sheetUrlInput" placeholder="/**
+ * Melihat jumlah data Entry BOS
+ */
+function cekEntryBos() {
+
+  const sheet = getSheet_();
+
+  const data = sheet.getDataRange().getValues();
+
+  let totalBos = 0;
+
+  for (let i = 1; i < data.length; i++) {
+
+    if (
+      data[i][8] === true ||
+      data[i][8] === 'TRUE'
+    ) {
+
+      totalBos++;
+
+    }
+
+  }
+
+  Logger.log(
+    'Total Entry BOS: ' +
+    totalBos
+  );
+
+  return totalBos;
+
+}">
     </div>
     <p id="sheetStatus" style="font-size:11.5px; color:var(--ink-faint); margin:0 0 4px;">Belum diatur.</p>
     <div class="form-actions" style="justify-content:flex-start;">
