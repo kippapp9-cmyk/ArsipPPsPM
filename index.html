@@ -630,8 +630,98 @@
     .inline-date{min-width:118px;}
 
 </style>
+
+<style id="loginStyles">
+  #loginOverlay{
+    position:fixed;
+    inset:0;
+    z-index:99999;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(6,35,49,.78);
+    backdrop-filter:blur(3px);
+  }
+  #loginBox{
+    width:min(390px, calc(100vw - 32px));
+    background:#fff;
+    border-radius:12px;
+    box-shadow:0 18px 55px rgba(0,0,0,.28);
+    padding:28px;
+    box-sizing:border-box;
+  }
+  #loginBox h2{
+    margin:0 0 6px;
+    color:#11749a;
+    font-size:22px;
+  }
+  #loginBox .login-subtitle{
+    margin:0 0 22px;
+    color:#64748b;
+    font-size:13px;
+  }
+  #loginBox label{
+    display:block;
+    margin:12px 0 6px;
+    font-size:13px;
+    font-weight:600;
+    color:#334155;
+  }
+  #loginBox input{
+    width:100%;
+    box-sizing:border-box;
+    padding:10px 12px;
+    border:1px solid #cbd5e1;
+    border-radius:7px;
+    font-size:14px;
+    outline:none;
+  }
+  #loginBox input:focus{
+    border-color:#11749a;
+    box-shadow:0 0 0 3px rgba(17,116,154,.12);
+  }
+  #loginButton{
+    width:100%;
+    margin-top:20px;
+    padding:11px 14px;
+    border:0;
+    border-radius:7px;
+    background:#11749a;
+    color:#fff;
+    font-weight:700;
+    cursor:pointer;
+  }
+  #loginButton:hover{background:#0d607f}
+  #loginError{
+    display:none;
+    margin-top:10px;
+    color:#c62828;
+    font-size:12px;
+  }
+  #logoutButton{
+    margin-left:6px;
+  }
+</style>
+
 </head>
 <body>
+
+<div id="loginOverlay">
+  <div id="loginBox">
+    <h2>🔐 Login Sistem</h2>
+    <p class="login-subtitle">Monitoring Pemindaian SPM</p>
+
+    <label for="loginUser">Username</label>
+    <input type="text" id="loginUser" autocomplete="username" placeholder="Masukkan username">
+
+    <label for="loginPassword">Password</label>
+    <input type="password" id="loginPassword" autocomplete="current-password" placeholder="Masukkan password">
+
+    <button type="button" id="loginButton">Masuk</button>
+    <div id="loginError">Username atau password salah.</div>
+  </div>
+</div>
+
 <div class="sheet">
 
   <div class="letterhead">
@@ -684,6 +774,7 @@
       <button class="btn outline small" id="btnPrint">Cetak</button>
       <button class="btn outline small" id="btnExportJson">Simpan Data (JSON)</button>
       <button class="btn outline small" id="btnImportJson">Muat Data</button>
+      <button class="btn outline small" id="btnClearLocal">Hapus Data Lokal</button>
       <input type="file" id="importFile" accept="application/json">
       <button class="btn outline small" id="btnImportExcel" title="Unggah rekap Monitoring SPP/SPM/SP2D (.xlsx) dari OM SPAN">&#128228; Unggah Excel OM SPAN</button>
       <input type="file" id="importExcelFile" accept=".xlsx,.xls">
@@ -724,7 +815,7 @@
     </div>
 
     <div class="footnote">
-      <strong>Catatan:</strong> Data pada halaman ini tersimpan sementara di memori peramban (session), bukan di penyimpanan lokal — jika halaman ditutup, data akan hilang. Gunakan tombol <strong>“Simpan Data (JSON)”</strong> untuk mengunduh cadangan, dan <strong>“Muat Data”</strong> untuk memuatnya kembali di kunjungan berikutnya. Gunakan <strong>“Unggah Excel OM SPAN”</strong> untuk memuat rekap resmi <em>Monitoring SPP, SPM, dan SP2D</em> — nomor, tanggal, uraian, dan nilai SPM akan otomatis terisi; status pemindaian tetap perlu ditandai manual per dokumen (atau otomatis dipertahankan bila nomor SPM tersebut sudah pernah ditandai sebelumnya).
+      <strong>Catatan:</strong> Data pada halaman ini disimpan pada <strong>penyimpanan lokal (localStorage)</strong> peramban. Data tetap tersedia setelah halaman ditutup dan dibuka kembali pada peramban/perangkat yang sama. Gunakan tombol <strong>“Simpan Data (JSON)”</strong> sebagai cadangan tambahan. Gunakan <strong>“Unggah Excel OM SPAN”</strong> untuk memuat rekap resmi <em>Monitoring SPP, SPM, dan SP2D</em> — nomor, tanggal, uraian, dan nilai SPM akan otomatis terisi; status pemindaian dan Entry BOS tetap dipertahankan; data lama yang tidak ada pada upload baru juga tidak dihapus. Jika nomor SPM sudah pernah diisi, status, tanggal, dan keterangan manual tetap dipertahankan.
     </div>
 
   </div>
@@ -848,6 +939,45 @@
     records: []            // {id, nomorSpm, tanggalSpm, uraian, nilai, tanggalPindai, sudah, tanggalEntryBos, entryBos, keterangan}
   };
 
+  // ---- Local storage: data tetap tersimpan setelah browser/halaman ditutup ----
+  var LOCAL_STORAGE_KEY = "monitoringSPMData_v1";
+  var LOCAL_STORAGE_YEAR_KEY = "monitoringSPMYear_v1";
+
+  function saveLocalData(){
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state.records));
+      localStorage.setItem(LOCAL_STORAGE_YEAR_KEY, String(state.year));
+      return true;
+    } catch(err) {
+      console.error("Gagal menyimpan data lokal", err);
+      return false;
+    }
+  }
+
+  function loadLocalData(){
+    try {
+      var raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if(!raw) return false;
+      var data = JSON.parse(raw);
+      if(!Array.isArray(data)) return false;
+      state.records = data;
+      var y = Number(localStorage.getItem(LOCAL_STORAGE_YEAR_KEY));
+      if(y) state.year = y;
+      return true;
+    } catch(err) {
+      console.error("Gagal memuat data lokal", err);
+      return false;
+    }
+  }
+
+  function clearLocalData(){
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_YEAR_KEY);
+    state.records = [];
+    renderAll();
+    showToast("Data lokal dihapus.");
+  }
+
   // ---- seed sample data so the layout is legible on first open ----
   function seedSample(){
     var y = state.year;
@@ -858,7 +988,8 @@
       {id:"s3", nomorSpm:"00114/SPM-UP/"+y, tanggalSpm:d(1,5), uraian:"Uang persediaan operasional bulan Februari", nilai:25000000, tanggalPindai:d(1,9), sudah:true, tanggalEntryBos:"", entryBos:false, keterangan:"Contoh data — silakan hapus"}
     ];
   }
-  seedSample();
+  var hasLocalData = loadLocalData();
+  if(!hasLocalData) seedSample();
 
   // ---------- helpers ----------
   function pad(n){ return String(n).padStart(2,"0"); }
@@ -1101,6 +1232,7 @@
       if(confirm("Hapus data SPM ini?")){
         state.records = state.records.filter(function(r){return r.id!==id;});
         renderAll();
+        saveLocalData();
         autoSheetSync();
         showToast("Data dihapus.");
       }
@@ -1128,8 +1260,8 @@
   document.getElementById("bosFilter").addEventListener("change", function(e){
     state.bosFilter = e.target.value; renderTable();
   });
-  document.getElementById("yPrev").addEventListener("click", function(){ state.year--; renderAll(); });
-  document.getElementById("yNext").addEventListener("click", function(){ state.year++; renderAll(); });
+  document.getElementById("yPrev").addEventListener("click", function(){ state.year--; saveLocalData(); renderAll(); });
+  document.getElementById("yNext").addEventListener("click", function(){ state.year++; saveLocalData(); renderAll(); });
 
   // ---------- modal ----------
   var overlay = document.getElementById("overlay");
@@ -1239,6 +1371,12 @@
     showToast("Cadangan JSON diunduh.");
   });
 
+  document.getElementById("btnClearLocal").addEventListener("click", function(){
+    if(confirm("Hapus semua data SPM yang tersimpan di browser ini? Data di Google Sheets tidak ikut terhapus.")){
+      clearLocalData();
+    }
+  });
+
   document.getElementById("btnImportJson").addEventListener("click", function(){
     document.getElementById("importFile").click();
   });
@@ -1257,6 +1395,7 @@
           data.forEach(function(d){ if(!d.id) d.id = uid(); state.records.push(d); });
         }
         renderAll();
+        saveLocalData();
         autoSheetSync();
         showToast("Data berhasil dimuat.");
       }catch(err){
@@ -1355,10 +1494,17 @@
       return;
     }
 
-    // existing scan status, keyed by nomor|tanggal, so re-uploads don't wipe progress
+    // Simpan data lama berdasarkan nomor SPM dan juga nomor+tanggal.
+    // Saat OM SPAN diunggah ulang, data lama TIDAK dihapus.
+    // Prioritas pencocokan: nomor+tanggal -> nomor SPM.
+    // Semua isian manual yang sudah pernah dibuat dipertahankan.
     var existingByKey = {};
+    var existingByNomor = {};
     state.records.forEach(function(r){
-      existingByKey[(r.nomorSpm||"")+"|"+(r.tanggalSpm||"")] = r;
+      var key = (r.nomorSpm||"").trim()+"|"+(r.tanggalSpm||"");
+      existingByKey[key] = r;
+      var nomorKey = (r.nomorSpm||"").trim();
+      if(nomorKey && !existingByNomor[nomorKey]) existingByNomor[nomorKey] = r;
     });
 
     var added = 0, updated = 0, skipped = 0;
@@ -1382,19 +1528,25 @@
       else if(idx.statusSpm>-1 && row[idx.statusSpm]) ketParts.push(String(row[idx.statusSpm]).trim());
 
       var key = nomor+"|"+tglSpm;
-      var prev = existingByKey[key];
+      var prev = existingByKey[key] || existingByNomor[nomor];
+
       var rec = {
         id: prev ? prev.id : uid(),
         nomorSpm: nomor,
-        tanggalSpm: tglSpm,
-        uraian: uraian,
-        nilai: nilai,
-        tanggalPindai: prev ? prev.tanggalPindai : "",
-        sudah: prev ? prev.sudah : false,
-        tanggalEntryBos: prev ? prev.tanggalEntryBos : "",
-        entryBos: prev ? prev.entryBos : false,
-        keterangan: ketParts.join(" \u2022 ")
+        tanggalSpm: tglSpm || (prev ? prev.tanggalSpm : ""),
+        uraian: uraian || (prev ? prev.uraian : ""),
+        nilai: nilai !== "" ? nilai : (prev ? prev.nilai : ""),
+
+        // ISIAN MANUAL WAJIB DIPERTAHANKAN SAAT UPLOAD ULANG OM SPAN
+        tanggalPindai: prev ? (prev.tanggalPindai || "") : "",
+        sudah: prev ? !!prev.sudah : false,
+        tanggalEntryBos: prev ? (prev.tanggalEntryBos || "") : "",
+        entryBos: prev ? !!prev.entryBos : false,
+
+        // Pertahankan keterangan manual jika ada; jika kosong gunakan data OM SPAN baru.
+        keterangan: (prev && prev.keterangan) ? prev.keterangan : ketParts.join(" • ")
       };
+
       if(prev){ updated++; } else { added++; }
       newRecords.push(rec);
     }
@@ -1411,16 +1563,47 @@
       "\nLanjutkan mengimpor?";
     if(!confirm(msg)) return;
 
+    // MERGE, bukan replace:
+    // Data yang tidak ada di upload baru tetap dipertahankan.
     var byKey = {};
-    state.records.forEach(function(r){ byKey[(r.nomorSpm||"")+"|"+(r.tanggalSpm||"")] = r; });
+    var byNomor = {};
+    state.records.forEach(function(r){
+      byKey[(r.nomorSpm||"")+"|"+(r.tanggalSpm||"")] = r;
+      if(r.nomorSpm && !byNomor[r.nomorSpm]) byNomor[r.nomorSpm] = r;
+    });
+
     newRecords.forEach(function(r){
       var k = r.nomorSpm+"|"+r.tanggalSpm;
-      var existing = byKey[k];
+      var existing = byKey[k] || byNomor[r.nomorSpm];
+
       if(existing){
-        Object.assign(existing, r, {id: existing.id});
+        // Data OM SPAN boleh memperbarui nomor/tanggal/uraian/nilai,
+        // tetapi status scan, tanggal scan, status Entry BOS, tanggal Entry BOS,
+        // dan keterangan manual tetap dipertahankan.
+        var oldScanDate = existing.tanggalPindai || "";
+        var oldScanStatus = !!existing.sudah;
+        var oldBosDate = existing.tanggalEntryBos || "";
+        var oldBosStatus = !!existing.entryBos;
+        var oldKet = existing.keterangan || "";
+        var oldId = existing.id;
+
+        existing.nomorSpm = r.nomorSpm;
+        existing.tanggalSpm = r.tanggalSpm || existing.tanggalSpm;
+        existing.uraian = r.uraian || existing.uraian;
+        existing.nilai = r.nilai !== "" ? r.nilai : existing.nilai;
+        existing.tanggalPindai = oldScanDate;
+        existing.sudah = oldScanStatus;
+        existing.tanggalEntryBos = oldBosDate;
+        existing.entryBos = oldBosStatus;
+        existing.keterangan = oldKet || r.keterangan || "";
+        existing.id = oldId;
+
+        byKey[existing.nomorSpm+"|"+existing.tanggalSpm] = existing;
+        byNomor[existing.nomorSpm] = existing;
       } else {
         state.records.push(r);
         byKey[k] = r;
+        byNomor[r.nomorSpm] = r;
       }
     });
 
@@ -1428,6 +1611,7 @@
     if(years.length){ state.year = years.sort().pop(); }
     state.tab = "all";
     renderAll();
+    saveLocalData();
     autoSheetSync();
     showToast(added+" data ditambahkan, "+updated+" diperbarui dari Excel.");
   }
@@ -1577,6 +1761,7 @@
         }
         state.tab = "all";
         renderAll();
+        saveLocalData();
         sheetStatusEl.textContent = "Dimuat " + incoming.length + " data pukul " + new Date().toLocaleTimeString("id-ID");
         showToast("Data dimuat dari Google Sheets.");
       })
@@ -1590,7 +1775,77 @@
 
   renderAll();
   if(CONFIG_SHEET_URL){ sheetLoad(false); }
+
 })();
 </script>
+
+<script id="loginScript">
+(function(){
+  var LOGIN_USER = "keuangan";
+  var LOGIN_PASS = "keuangan1900";
+  var LOGIN_KEY = "monitoringSPMLogin";
+
+  function showApp(){
+    var overlay = document.getElementById("loginOverlay");
+    if(overlay) overlay.style.display = "none";
+  }
+
+  function hideApp(){
+    var overlay = document.getElementById("loginOverlay");
+    if(overlay) overlay.style.display = "flex";
+  }
+
+  function doLogin(){
+    var user = (document.getElementById("loginUser").value || "").trim();
+    var pass = document.getElementById("loginPassword").value || "";
+    var error = document.getElementById("loginError");
+
+    if(user === LOGIN_USER && pass === LOGIN_PASS){
+      try { sessionStorage.setItem(LOGIN_KEY, "1"); } catch(e) {}
+      error.style.display = "none";
+      showApp();
+      try { document.getElementById("loginPassword").value = ""; } catch(e) {}
+    }else{
+      error.style.display = "block";
+      document.getElementById("loginPassword").focus();
+    }
+  }
+
+  function doLogout(){
+    try { sessionStorage.removeItem(LOGIN_KEY); } catch(e) {}
+    document.getElementById("loginUser").value = "";
+    document.getElementById("loginPassword").value = "";
+    hideApp();
+    document.getElementById("loginUser").focus();
+  }
+
+  document.addEventListener("DOMContentLoaded", function(){
+    var button = document.getElementById("loginButton");
+    var user = document.getElementById("loginUser");
+    var pass = document.getElementById("loginPassword");
+    var logout = document.getElementById("btnLogout");
+
+    var loggedIn = false;
+    try { loggedIn = sessionStorage.getItem(LOGIN_KEY) === "1"; } catch(e) {}
+
+    if(loggedIn) showApp();
+    else {
+      hideApp();
+      setTimeout(function(){ if(user) user.focus(); }, 100);
+    }
+
+    if(button) button.addEventListener("click", doLogin);
+
+    [user, pass].forEach(function(el){
+      if(el) el.addEventListener("keydown", function(e){
+        if(e.key === "Enter") doLogin();
+      });
+    });
+
+    if(logout) logout.addEventListener("click", doLogout);
+  });
+})();
+</script>
+
 </body>
 </html>
